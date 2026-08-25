@@ -1,6 +1,6 @@
 # Marketpulse
 
-### A Real-time Stock and Crypto Market Dashboard
+### A Real-time  and Crypto Market Dashboard
 
 This project is a powerful, interactive market tracker built using **Python** and **Streamlit**. It provides users with live data, historical analysis, and AI-driven insights for both stocks and cryptocurrencies, all within a clean and user-friendly web interface.
 
