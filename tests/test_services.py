@@ -98,10 +98,19 @@ def test_returns_empty_when_healthy_providers_genuinely_have_no_news():
 
 
 def test_raises_when_no_provider_is_configured_at_all():
+    """Returning empty here would render as "no news found for AAPL" — the
+    same lie one level up. We never looked, so we must say so."""
     us = FakeNewsProvider("NewsAPI", configured=False)
     glob = FakeNewsProvider("MarketAux", configured=False)
+    with pytest.raises(ProviderNotConfigured):
+        NewsService(us, glob).get_news("Apple", exchange="NASDAQ")
+
+
+def test_one_configured_provider_is_enough():
+    us = FakeNewsProvider("NewsAPI", configured=False)
+    glob = FakeNewsProvider("MarketAux")
     result = NewsService(us, glob).get_news("Apple", exchange="NASDAQ")
-    assert result.empty
+    assert result.source == "MarketAux"
 
 
 def test_not_configured_error_is_collected_and_surfaced():
@@ -185,3 +194,44 @@ def test_default_watchlist_has_no_delisted_tickers():
 
     assert "DAI.DE" not in DEFAULT_STOCK_SYMBOLS
     assert "TM.TO" not in DEFAULT_STOCK_SYMBOLS
+
+
+# --------------------------------------------------------------------------
+# Currency inference from the ticker suffix
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected"),
+    [
+        ("AAPL", "USD"),
+        ("0005.HK", "HKD"),      # was labelled USD before this existed
+        ("RELIANCE.NS", "INR"),
+        ("TCS.NS", "INR"),
+        ("SHEL.L", "GBP"),
+        ("MBG.DE", "EUR"),
+        ("RY.TO", "CAD"),
+        ("7203.T", "JPY"),
+        ("BHP.AX", "AUD"),
+        ("NESN.SW", "CHF"),
+    ],
+)
+def test_currency_is_inferred_from_the_exchange_suffix(symbol, expected):
+    from marketpulse.schema.exchanges import currency_for_symbol
+
+    assert currency_for_symbol(symbol) == expected
+
+
+@pytest.mark.parametrize("symbol", ["^GSPC", "^FTSE", "FOO.ZZZ", ""])
+def test_unknown_venues_return_none_rather_than_guessing_usd(symbol):
+    """A wrong currency label is misinformation; an absent one is a gap."""
+    from marketpulse.schema.exchanges import currency_for_symbol
+
+    assert currency_for_symbol(symbol) is None
+
+
+def test_london_pence_normalises_to_gbp():
+    from marketpulse.schema.exchanges import normalise_currency
+
+    assert normalise_currency("GBp") == "GBP"
+    assert normalise_currency("") is None

@@ -1,0 +1,250 @@
+"""MarketPulse dashboard — presentation only.
+
+Talks to the service through `MarketPulseClient` and nothing else. No
+provider imports, no yfinance, no caching, no retry logic: all of that lives
+behind the API now, which is why this file is a fifth of the size of the
+542-line script it replaces.
+"""
+
+from __future__ import annotations
+
+import os
+
+import pandas as pd
+import streamlit as st
+from streamlit_autorefresh import st_autorefresh
+
+from marketpulse.client import DEFAULT_BASE_URL, MarketPulseClient, MarketPulseClientError
+from marketpulse.schema.api import is_valid_symbol
+from marketpulse.schema.exchanges import currency_for_symbol
+from marketpulse.ui.components import charts, panels, state
+
+SNAPSHOT_STEP = 4
+
+
+@st.cache_resource
+def get_client() -> MarketPulseClient:
+    """One client per Streamlit process; httpx pools connections internally."""
+    return MarketPulseClient(os.environ.get("MARKETPULSE_API_URL", DEFAULT_BASE_URL))
+
+
+def _sidebar() -> tuple[str, int]:
+    st.sidebar.header("Navigation")
+    view = st.sidebar.radio("Market", ("Stocks", "Cryptocurrencies"))
+
+    st.sidebar.header("Settings")
+    interval = st.sidebar.slider("Auto-refresh (seconds)", 30, 300, 60, 30)
+
+    # Client-side timer. The original parked a server thread in
+    # time.sleep() per session, which capped concurrency at a handful.
+    st_autorefresh(interval=interval * 1000, key="marketpulse_refresh")
+
+    with st.sidebar.expander("Service status"):
+        try:
+            client = get_client()
+            readiness = client.readiness()
+            st.write(f"**{readiness.status}**")
+            for name, value in readiness.checks.items():
+                st.caption(f"{name}: {value}")
+            st.caption(f"cache: {client.metrics()['cache']}")
+        except MarketPulseClientError as exc:
+            state.show_error(exc, context="Service")
+
+    return view, interval
+
+
+def _overview_section(client: MarketPulseClient) -> None:
+    st.subheader("Market snapshots")
+
+    if "snapshot_pages" not in st.session_state:
+        st.session_state.snapshot_pages = 1
+
+    with st.spinner("Loading market data…"):
+        try:
+            overview = client.get_overview()
+        except MarketPulseClientError as exc:
+            state.show_error(exc, context="Overview")
+            return
+
+    state.degraded_banner(overview.failures)
+    limit = SNAPSHOT_STEP * st.session_state.snapshot_pages
+
+    st.markdown("##### Stocks")
+    panels.stock_snapshots(overview.stocks, limit)
+    st.markdown("##### Cryptocurrencies")
+    panels.crypto_snapshots(overview.crypto, limit)
+
+    total = max(len(overview.stocks), len(overview.crypto))
+    left, right = st.columns(2)
+    with left:
+        if limit < total and st.button("Show more", width="stretch"):
+            st.session_state.snapshot_pages += 1
+            st.rerun()
+    with right:
+        if st.session_state.snapshot_pages > 1 and st.button("Show less", width="stretch"):
+            st.session_state.snapshot_pages -= 1
+            st.rerun()
+
+    if overview.stocks:
+        state.freshness_caption(
+            max(q.as_of for q in overview.stocks),
+            any(q.cached for q in overview.stocks),
+        )
+
+
+def _stock_detail(client: MarketPulseClient) -> None:
+    st.subheader("Stock detail")
+
+    raw = st.text_input(
+        "Ticker symbol",
+        value=st.session_state.get("symbol", "AAPL"),
+        help="AAPL · RELIANCE.NS (India) · 0005.HK (Hong Kong) · SHEL.L (UK)",
+    ).strip().upper()
+
+    with st.expander("Exchange suffixes"):
+        st.caption(
+            "Non-US listings need an exchange suffix. A few common ones — "
+            "yfinance documents the full list."
+        )
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    ("United States (NASDAQ/NYSE)", "(none)"),
+                    ("India (NSE / BSE)", ".NS / .BO"),
+                    ("United Kingdom (LSE)", ".L"),
+                    ("Hong Kong (HKEX)", ".HK"),
+                    ("Germany (XETRA)", ".DE"),
+                    ("Japan (TSE)", ".T"),
+                    ("Canada (TSX)", ".TO"),
+                    ("Australia (ASX)", ".AX"),
+                ],
+                columns=["Market", "Suffix"],
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+
+    if not raw:
+        state.show_empty("Enter a ticker symbol to see details.")
+        return
+
+    # Validated here as well as server-side, so an obviously bad symbol
+    # never costs a round trip.
+    if not is_valid_symbol(raw):
+        st.warning(
+            f"`{raw}` is not a valid ticker. Use letters, digits, `.`, `-` or `^` "
+            f"(for example `AAPL` or `RELIANCE.NS`)."
+        )
+        return
+
+    st.session_state.symbol = raw
+    period = charts.range_selector("stock_range", charts.RANGE_OPTIONS, default="1Y")
+
+    try:
+        profile = None
+        try:
+            profile = client.get_profile(raw)
+        except MarketPulseClientError as exc:
+            # Profile is decoration: a missing one greys out a panel rather
+            # than failing the page.
+            if exc.code != "symbol_not_found":
+                st.caption(f"Company details unavailable: {exc}")
+
+        with st.spinner(f"Loading {raw}…"):
+            history = client.get_history(raw, period=period)
+    except MarketPulseClientError as exc:
+        state.show_error(exc, context=raw)
+        return
+
+    panels.company_header(raw, profile)
+
+    currency = (profile.currency if profile else None) or currency_for_symbol(raw) or ""
+    frame_bars = history.bars
+    if frame_bars:
+        last, prev = frame_bars[-1], (frame_bars[-2] if len(frame_bars) > 1 else None)
+        from marketpulse.schema.market import Quote
+
+        panels.key_metrics(
+            Quote(
+                symbol=raw,
+                price=last.c,
+                previous_close=prev.c if prev else None,
+                open=last.o,
+                high=last.h,
+                low=last.low,
+                volume=int(last.v),
+                currency=currency,
+                as_of=last.t,
+                cached=history.cached,
+            ),
+            profile,
+        )
+
+    charts.candlestick(history, currency)
+    charts.volume(history)
+    state.freshness_caption(history.as_of, history.cached)
+
+    st.markdown("##### Recent news")
+    try:
+        panels.news_panel(client.get_news(raw))
+    except MarketPulseClientError as exc:
+        state.show_error(exc, context="News")
+
+
+def _crypto_detail(client: MarketPulseClient) -> None:
+    st.subheader("Cryptocurrency detail")
+
+    try:
+        coin_ids = client.info().default_crypto_ids
+    except MarketPulseClientError as exc:
+        state.show_error(exc, context="Service")
+        return
+
+    coin = st.selectbox(
+        "Cryptocurrency",
+        coin_ids,
+        format_func=lambda c: c.replace("-", " ").title(),
+    )
+    days = charts.range_selector("crypto_range", charts.CRYPTO_RANGE_OPTIONS, default="1M")
+
+    try:
+        with st.spinner(f"Loading {coin}…"):
+            history = client.get_crypto_history(coin, days=days)
+    except MarketPulseClientError as exc:
+        state.show_error(exc, context=coin)
+        return
+
+    charts.line(history, coin.replace("-", " ").title())
+    state.freshness_caption(history.as_of, history.cached)
+
+    st.markdown("##### Recent news")
+    try:
+        panels.news_panel(client.search_news(f"{coin.replace('-', ' ')} cryptocurrency"))
+    except MarketPulseClientError as exc:
+        state.show_error(exc, context="News")
+
+
+def main() -> None:
+    st.set_page_config(
+        layout="wide",
+        page_title="MarketPulse",
+        page_icon="📈",
+        initial_sidebar_state="expanded",
+    )
+    st.title("📈 MarketPulse")
+    st.caption("Real-time stock and cryptocurrency tracking with news aggregation")
+
+    view, _ = _sidebar()
+    client = get_client()
+
+    _overview_section(client)
+    st.divider()
+
+    if view == "Stocks":
+        _stock_detail(client)
+    else:
+        _crypto_detail(client)
+
+
+if __name__ == "__main__":
+    main()

@@ -14,6 +14,7 @@ from marketpulse.platform.telemetry import get_logger
 from marketpulse.providers.errors import ProviderError, SymbolNotFound
 from marketpulse.providers.protocol import CryptoProvider, PriceProvider
 from marketpulse.schema import CompanyProfile, CryptoQuote, PriceHistory, Quote
+from marketpulse.schema.exchanges import currency_for_symbol
 
 logger = get_logger("services.market")
 
@@ -115,7 +116,8 @@ class MarketService:
     def get_quote(self, symbol: str, period: str = "5d") -> Quote | None:
         history = self._prices.get_history(symbol, period=period, interval="1d")
         profile = self.get_profile(symbol)
-        return history.to_quote(currency=profile.currency if profile else "USD")
+        currency = (profile.currency if profile else None) or currency_for_symbol(symbol)
+        return history.to_quote(currency=currency)
 
     def get_crypto_history(self, coin_id: str, days: str = "30") -> PriceHistory:
         return self._crypto.get_history(coin_id, days)

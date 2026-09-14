@@ -66,11 +66,13 @@ class NewsService:
             primary, secondary = self._global, self._us
 
         errors: list[ProviderError] = []
+        attempted = False
 
         for provider, is_fallback in ((primary, False), (secondary, True)):
             if not provider.configured:
                 logger.info("skipping %s: not configured", provider.name)
                 continue
+            attempted = True
             try:
                 result = provider.get_news(query, symbol=symbol, limit=limit)
             except ProviderNotConfigured as exc:
@@ -94,6 +96,16 @@ class NewsService:
             # than returning an empty list the UI would render as "no news".
             raise ProviderUnavailable(
                 "; ".join(str(e) for e in errors), provider="news"
+            )
+
+        if not attempted:
+            # No key for either provider, so we never looked. Returning an
+            # empty list here would render as "no news found for AAPL" —
+            # the same lie, one level up, that this service exists to stop.
+            raise ProviderNotConfigured(
+                "no news provider is configured (set NEWS_API_KEY and/or "
+                "MARKETAUX_API_KEY)",
+                provider="news",
             )
 
         # Providers were healthy and genuinely had nothing.

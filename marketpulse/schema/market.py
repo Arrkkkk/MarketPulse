@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from marketpulse.schema.exchanges import normalise_currency
+
 #: Columns every PriceHistory frame is guaranteed to have, lowercase.
 OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
 
@@ -33,7 +35,9 @@ class Quote(BaseModel):
     high: float | None = None
     low: float | None = None
     volume: int | None = None
-    currency: str = "USD"
+    #: None means "we do not know", not "USD". A wrong currency label is
+    #: misinformation; an absent one is a small gap.
+    currency: str | None = None
     as_of: datetime
     cached: bool = False
 
@@ -80,7 +84,7 @@ class CompanyProfile(BaseModel):
     sector: str | None = None
     industry: str | None = None
     summary: str | None = None
-    currency: str = "USD"
+    currency: str | None = None
     exchange: str | None = None
     market_cap: float | None = None
     fifty_two_week_high: float | None = None
@@ -91,11 +95,10 @@ class CompanyProfile(BaseModel):
 
     @field_validator("currency", mode="before")
     @classmethod
-    def _normalise_currency(cls, v: object) -> str:
-        """Yahoo reports London pence as 'GBp'; callers want the ISO code."""
-        if not isinstance(v, str) or not v.strip():
-            return "USD"
-        return "GBP" if v == "GBp" else v
+    def _normalise_currency(cls, v: object) -> str | None:
+        """Yahoo reports minor units ('GBp' for London pence) as their own
+        code; callers want ISO 4217."""
+        return normalise_currency(v) if isinstance(v, str) else None
 
 
 class PriceHistory(BaseModel):
@@ -134,8 +137,13 @@ class PriceHistory(BaseModel):
             return None
         return float(self.frame.iloc[-2]["close"])
 
-    def to_quote(self, currency: str = "USD") -> Quote | None:
-        """Collapse the series into a quote for the most recent bar."""
+    def to_quote(self, currency: str | None = None) -> Quote | None:
+        """Collapse the series into a quote for the most recent bar.
+
+        `currency` is passed in because an OHLCV frame does not carry one.
+        Callers that know it (from a profile, or from the ticker suffix via
+        `currency_for_symbol`) should supply it; the rest get None.
+        """
         last = self.latest
         if last is None:
             return None

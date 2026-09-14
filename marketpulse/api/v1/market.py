@@ -1,0 +1,115 @@
+"""Market data endpoints.
+
+Endpoints validate input, call one service method, and shape the result.
+They contain no fetching, no caching and no error handling — providers raise,
+the registered handlers in `api/errors.py` translate.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Query
+
+from marketpulse.api.deps import MarketServiceDep
+from marketpulse.schema.api import (
+    CoinId,
+    HistoryResponse,
+    OverviewResponse,
+    ProfileResponse,
+    Symbol,
+)
+from marketpulse.schema.exchanges import currency_for_symbol
+from marketpulse.schema.market import PriceHistory
+
+router = APIRouter(tags=["market"])
+
+#: Hard ceiling on bars returned in one response. IBM's full history is
+#: 16,283 rows (~1.4MB of JSON) and the old UI shipped all of it to the
+#: browser on every rerun. Downsampling is strided here; Phase 5 swaps in
+#: LTTB so the reduced series keeps the visual shape of the original.
+MAX_BARS = 2000
+
+
+def _downsample(history: PriceHistory, max_points: int) -> tuple[PriceHistory, int]:
+    """Return (possibly reduced history, original row count)."""
+    total = len(history)
+    if total <= max_points:
+        return history, total
+    stride = (total // max_points) + 1
+    reduced = history.frame.iloc[::stride]
+    # Always keep the most recent bar: it is the one carrying the current
+    # price, and a stride can land just short of it.
+    if not reduced.index.equals(history.frame.index[-1:]) and len(history.frame):
+        last = history.frame.iloc[[-1]]
+        if reduced.index[-1] != last.index[0]:
+            import pandas as pd
+
+            reduced = pd.concat([reduced, last])
+    return history.model_copy(update={"frame": reduced}), total
+
+
+@router.get("/overview", response_model=OverviewResponse, summary="Dashboard landing data")
+def get_overview(service: MarketServiceDep) -> OverviewResponse:
+    """Stocks and crypto for the landing view.
+
+    Returns 200 even when one asset class failed: a dashboard that shows
+    crypto while Yahoo is down is more useful than one showing nothing. The
+    `failures` map and `degraded` flag tell the client what is missing so it
+    can say so rather than rendering a misleading empty panel.
+    """
+    overview = service.get_overview()
+    # Currency comes from the ticker suffix, not from a per-symbol .info
+    # lookup: the batch price download carries no currency, and fetching 29
+    # profiles to read one field each is what made the old cold start 45s.
+    quotes = [
+        q
+        for symbol, h in overview.stocks.items()
+        if (q := h.to_quote(currency=currency_for_symbol(symbol))) is not None
+    ]
+    return OverviewResponse(
+        stocks=sorted(quotes, key=lambda q: q.symbol),
+        crypto=sorted(overview.crypto.values(), key=lambda c: c.coin_id),
+        failures=overview.failures,
+        degraded=overview.degraded,
+    )
+
+
+@router.get("/history/{symbol}", response_model=HistoryResponse, summary="OHLCV history")
+def get_history(
+    symbol: Symbol,
+    service: MarketServiceDep,
+    period: str = Query("1y", pattern=r"^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$"),
+    interval: str = Query("1d", pattern=r"^(1m|5m|15m|30m|60m|1h|1d|5d|1wk|1mo|3mo)$"),
+    max_points: int = Query(MAX_BARS, ge=10, le=MAX_BARS),
+) -> HistoryResponse:
+    history = service.get_history(symbol, period=period, interval=interval)
+    reduced, total = _downsample(history, max_points)
+    return HistoryResponse.from_history(reduced, total=total)
+
+
+@router.get("/profile/{symbol}", response_model=ProfileResponse, summary="Company profile")
+def get_profile(symbol: Symbol, service: MarketServiceDep) -> ProfileResponse:
+    """Descriptive metadata. Fetched lazily — never for the whole watchlist."""
+    profile = service.get_profile(symbol)
+    if profile is None:
+        # Distinct from a provider failure: the symbol resolves, Yahoo just
+        # has no profile for it. 404 is the honest answer.
+        from marketpulse.providers.errors import SymbolNotFound
+
+        raise SymbolNotFound(f"no profile for {symbol!r}", provider="yfinance")
+    return ProfileResponse(**profile.model_dump())
+
+
+@router.get(
+    "/crypto/history/{coin_id}",
+    response_model=HistoryResponse,
+    summary="Cryptocurrency price history",
+)
+def get_crypto_history(
+    coin_id: CoinId,
+    service: MarketServiceDep,
+    days: str = Query("30", pattern=r"^(1|7|14|30|90|180|365|max)$"),
+    max_points: int = Query(MAX_BARS, ge=10, le=MAX_BARS),
+) -> HistoryResponse:
+    history = service.get_crypto_history(coin_id, days=days)
+    reduced, total = _downsample(history, max_points)
+    return HistoryResponse.from_history(reduced, total=total)
