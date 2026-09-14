@@ -13,6 +13,7 @@ from fastapi import APIRouter
 from marketpulse.api.deps import SettingsDep
 from marketpulse.platform.cache import get_cache
 from marketpulse.platform.http import get_breaker
+from marketpulse.platform.metrics import get_metrics
 from marketpulse.schema.api import HealthResponse, ReadinessResponse, ServiceInfo
 from marketpulse.services.market_service import DEFAULT_CRYPTO_IDS, DEFAULT_STOCK_SYMBOLS
 
@@ -79,6 +80,7 @@ def metrics() -> dict:
         "cache": get_cache().stats(),
         "breakers": {
             name: get_breaker(name).state
-            for name in ("yfinance", "coingecko", "newsapi", "marketaux")
+            for name in ("yfinance", "coingecko", "newsapi", "marketaux", "gemini")
         },
+        **get_metrics().snapshot(),
     }

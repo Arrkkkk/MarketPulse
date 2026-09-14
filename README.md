@@ -78,7 +78,7 @@ An unknown venue renders no currency label rather than a wrong one.
 
 ```
 marketpulse/
-├── platform/     http resilience, tiered cache, serde, logging
+├── platform/     http resilience, tiered cache, LTTB downsampling, metrics
 ├── schema/       domain + wire models, exchange reference data
 ├── providers/    Protocols, typed errors, 4 providers, caching wrappers
 ├── services/     market orchestration, news routing
@@ -95,7 +95,7 @@ Streamlit.
 ## Development
 
 ```bash
-uv run pytest                     # 266 tests, no network
+uv run pytest                     # 299 tests, no network
 uv run pytest --cov               # coverage
 uv run ruff check marketpulse/
 uv run python scripts/smoke_live.py    # hits real upstreams
@@ -115,10 +115,29 @@ pre-refactor baseline of **45.5s**:
 | Warm (in process) | 0.057s | 804× |
 | Warm (new process, SQLite tier) | 0.016s | what a second visitor pays |
 
-Chart payload for `IBM period=max`: 16,283 rows (~1.4MB) → 495 bars (68KB)
-after downsampling, **21× smaller on the wire**.
+API latency, measured over the live service:
 
-Re-measure with `scripts/smoke_live.py`.
+| Endpoint | p50 | p95 |
+|---|---:|---:|
+| `GET /v1/overview` (warm) | 14ms | 24ms |
+| `GET /v1/analysis/{symbol}` (cached) | 2.5ms | — |
+| `GET /v1/analysis/{symbol}` (cold, real model) | 2.6s | — |
+
+Chart payload for `IBM period=max` — 16,283 rows, ~1.4MB before:
+
+| | Bars | Raw | Gzipped |
+|---|---:|---:|---:|
+| Default | 800 | 110KB | **38KB** |
+| `max_points=2000` | 2,000 | 275KB | 91KB |
+
+That is ~37× smaller on the wire than the original, and the reduction is
+LTTB rather than a stride, so spikes and crashes survive it.
+
+Cache pre-warms on startup (1.7s in the background), so the first visitor
+after a deploy does not pay the cold fetch. Live cache hit rate after a
+browsing session: 95%.
+
+Re-measure with `scripts/smoke_live.py` and `GET /metrics`.
 
 ## API
 

@@ -401,3 +401,52 @@ def test_insights_rejects_out_of_range_questions(question, cache):
     analyst = NewsAnalyst(client=make_client(stream_chunks=["ok"]), cache=cache)
     r = _analyst_client(analyst).post("/v1/insights", json={"question": question})
     assert r.status_code == 422
+
+
+# --- performance instrumentation -------------------------------------------
+
+
+def test_latency_labels_use_the_full_route_template(client):
+    """FastAPI's lazy inclusion reports `/overview` for `/v1/overview`; an
+    un-prefixed label would collide across API versions."""
+    from marketpulse.platform.metrics import get_metrics
+
+    get_metrics().reset()
+    client.get("/v1/overview")
+    client.get("/v1/history/AAPL")
+    labels = set(get_metrics().snapshot()["latency"])
+    assert "GET /v1/overview" in labels
+    assert "GET /v1/history/{symbol}" in labels
+
+
+def test_concrete_symbols_share_one_label(client):
+    """Otherwise every ticker leaks a new metric series."""
+    from marketpulse.platform.metrics import get_metrics
+
+    get_metrics().reset()
+    for _ in range(3):
+        client.get("/v1/history/AAPL")
+    labels = get_metrics().snapshot()["latency"]
+    assert labels["GET /v1/history/{symbol}"]["count"] == 3
+    assert not any("AAPL" in k for k in labels)
+
+
+def test_every_response_carries_server_timing(client):
+    assert "Server-Timing" in client.get("/v1/overview").headers
+
+
+def test_metrics_endpoint_exposes_latency_and_cache(client):
+    client.get("/v1/overview")
+    body = client.get("/metrics").json()
+    assert "latency" in body and "cache" in body and "breakers" in body
+    assert "gemini" in body["breakers"]
+
+
+def test_history_defaults_to_a_chart_sized_payload(client):
+    """800 points, not 2000: a 1200px plot cannot show more than about two
+    points per pixel, so the rest is bytes nobody can see."""
+    from marketpulse.api.v1.market import DEFAULT_BARS, MAX_BARS
+
+    assert DEFAULT_BARS < MAX_BARS
+    body = client.get("/v1/history/AAPL").json()
+    assert body["count"] <= DEFAULT_BARS
