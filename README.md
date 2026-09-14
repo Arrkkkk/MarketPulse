@@ -100,7 +100,8 @@ uv run pytest --cov               # coverage
 uv run ruff check marketpulse/
 uv run python scripts/smoke_live.py    # hits real upstreams
 uv run python scripts/smoke_ui.py      # drives the UI against a running API
-uv run python scripts/check_models.py  # verifies the model catalog (needs a key)
+uv run python scripts/check_models.py  # probes every catalog model (needs a key)
+uv run python scripts/eval_injection.py # live prompt-injection eval (needs a key)
 ```
 
 ## Measured
@@ -140,17 +141,27 @@ Interactive docs at `/docs`.
 | `MARKETPULSE_API_URL` | UI defaults to `http://localhost:8000` |
 | `LOG_LEVEL` | `INFO` |
 
-## Unverified
+## Verified against the live API
 
-Two things in this repo have not been run against reality and are labelled
-as such rather than presented as working:
+`scripts/check_models.py` calls every catalog model with a real
+`response_schema`, because listing is not enough — `gemini-2.5-flash`
+appears in `models.list()` for this key and returns 404 when invoked. All
+five catalog entries answered with a valid schema on 2026-09-15.
 
-- **The model catalog.** `marketpulse/ai/models.json` was written without a
-  `GEMINI_API_KEY` available, so its model ids and per-token rates are
-  unverified. Cost is reported as "estimated" everywhere it surfaces, and a
-  model with no rate on file reports no cost rather than a fabricated one.
-  Run `scripts/check_models.py` with a key to settle the ids, and confirm
-  the rates against the published price list.
+`scripts/eval_injection.py` is the behavioural half of the prompt-injection
+defence. Unit tests assert the prompt's structure; only a live model can
+tell you whether an attack works. Six attacks — direct override, a forged
+system turn, fake regulatory authority, role reassignment, a delimiter
+flood, and a base64-encoded instruction — were added to a set of
+unambiguously bearish articles. All six failed to move the verdict off
+bearish, and all six were reported in `risk_flags`.
+
+## Still unverified
+
+- **Per-token pricing.** Rates in `marketpulse/ai/models.json` are `null`.
+  Token counts come back exact from the API and are always reported; cost is
+  reported only once someone fills in rates confirmed against
+  <https://ai.google.dev/pricing>. A wrong rate is worse than no rate.
 - **The Docker build.** `Dockerfile` and `compose.yaml` are written and the
-  compose file parses, but Docker was not installed on the machine this was
+  compose file parses, but Docker is not installed on the machine this was
   developed on, so `docker compose up` has never been executed.

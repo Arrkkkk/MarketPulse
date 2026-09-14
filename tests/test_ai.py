@@ -127,10 +127,24 @@ def test_unknown_model_ids_are_usable_but_report_no_cost():
 
 
 def test_cost_arithmetic():
-    spec = resolve("gemini-2.0-flash")
-    # 1M in at 0.10, 1M out at 0.40
+    """Built from an explicit spec, not a catalog entry: the catalog's rates
+    are real data that changes, and this is testing the arithmetic."""
+    from marketpulse.ai.registry import ModelSpec
+
+    spec = ModelSpec(
+        id="test", display_name="test",
+        input_usd_per_mtok=0.10, output_usd_per_mtok=0.40,
+    )
     assert spec.estimate_cost_usd(1_000_000, 1_000_000) == pytest.approx(0.50)
+    assert spec.estimate_cost_usd(500_000, 0) == pytest.approx(0.05)
     assert spec.estimate_cost_usd(0, 0) == 0.0
+
+
+def test_catalog_rates_are_either_complete_or_absent():
+    """A half-filled rate pair would silently under-report cost."""
+    for spec in load_catalog():
+        both = (spec.input_usd_per_mtok is None) == (spec.output_usd_per_mtok is None)
+        assert both, f"{spec.id} has only one of the two rates"
 
 
 def test_a_model_with_no_rates_reports_none_not_zero():
@@ -267,15 +281,21 @@ def test_confidence_is_bounded(confidence):
         NewsAnalysis(sentiment=Sentiment.BULLISH, confidence=confidence, summary="x")
 
 
-def test_token_usage_and_cost_are_recorded(cache):
+def test_token_usage_is_recorded(cache):
+    """Token counts come back exact from the API and are always reported."""
     client = make_client([FakeResponse(parsed=good_analysis())])
-    result = NewsAnalyst(client=client, cache=cache, model_id="gemini-2.0-flash").analyze(
-        "AAPL", ARTICLES
-    )
+    result = NewsAnalyst(client=client, cache=cache).analyze("AAPL", ARTICLES)
     assert result.prompt_tokens == 1000
     assert result.output_tokens == 200
-    assert result.estimated_cost_usd == pytest.approx(1000 / 1e6 * 0.10 + 200 / 1e6 * 0.40)
     assert result.latency_ms is not None
+
+
+def test_cost_is_none_while_the_catalog_carries_no_rates(cache):
+    """Rates in models.json are null pending verification against the
+    published price list, so cost must read as unknown — never as zero."""
+    client = make_client([FakeResponse(parsed=good_analysis())])
+    result = NewsAnalyst(client=client, cache=cache).analyze("AAPL", ARTICLES)
+    assert result.estimated_cost_usd is None
 
 
 def test_missing_usage_metadata_is_tolerated(cache):
