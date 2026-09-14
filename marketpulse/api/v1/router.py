@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from marketpulse.api.v1 import health, market, news
+from marketpulse.api.v1 import analysis, health, market, news
 
 api_router = APIRouter()
 api_router.include_router(market.router, prefix="/v1")
 api_router.include_router(news.router, prefix="/v1")
+api_router.include_router(analysis.router, prefix="/v1")
 
 meta_router = APIRouter()
 meta_router.include_router(health.router)

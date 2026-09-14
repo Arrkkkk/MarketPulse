@@ -282,3 +282,122 @@ def test_news_without_any_configured_provider_is_503_not_empty():
     r = build_client(news_us=us, news_global=glob).get("/v1/news?q=apple")
     assert r.status_code == 503
     assert r.json()["error"] == "provider_not_configured"
+
+
+# --- ai endpoints ----------------------------------------------------------
+
+
+def _analyst_client(analyst):
+    """A TestClient whose analyst dependency is overridden."""
+    from marketpulse.api.deps import get_analyst
+
+    tc = build_client()
+    tc.app.dependency_overrides[get_analyst] = lambda: analyst
+    return tc
+
+
+def test_analysis_returns_the_structured_result(cache):
+    from marketpulse.ai.analyst import NewsAnalyst
+    from tests.test_ai import FakeResponse, good_analysis, make_client
+
+    analyst = NewsAnalyst(client=make_client([FakeResponse(parsed=good_analysis())]),
+                          cache=cache)
+    r = _analyst_client(analyst).get("/v1/analysis/AAPL")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["analysis"]["sentiment"] in {"bullish", "bearish", "neutral", "mixed"}
+    assert 0.0 <= body["analysis"]["confidence"] <= 1.0
+    assert body["model"]
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "code"),
+    [
+        ("AINotConfigured", 503, "ai_not_configured"),
+        ("AIRateLimited", 429, "ai_rate_limited"),
+        ("AIContextTooLong", 413, "ai_context_too_long"),
+        ("AIContentFiltered", 422, "ai_content_filtered"),
+        ("AIInvalidOutput", 502, "ai_invalid_output"),
+        ("AIUnavailable", 502, "ai_unavailable"),
+    ],
+)
+def test_ai_errors_map_to_the_right_status_and_code(error, status, code):
+    import marketpulse.ai.errors as ai_errors
+
+    exc_type = getattr(ai_errors, error)
+
+    class Failing:
+        model = "m"
+
+        def analyze(self, *a, **k):
+            raise exc_type("boom", model="m")
+
+    r = _analyst_client(Failing()).get("/v1/analysis/AAPL")
+    assert r.status_code == status
+    assert r.json()["error"] == code
+
+
+def test_ai_errors_use_the_same_envelope_as_everything_else():
+    from marketpulse.ai.errors import AIUnavailable
+
+    class Failing:
+        model = "m"
+
+        def analyze(self, *a, **k):
+            raise AIUnavailable("boom", model="m")
+
+    body = _analyst_client(Failing()).get("/v1/analysis/AAPL").json()
+    assert set(body) == {"error", "message", "detail", "request_id"}
+
+
+def test_analysis_rejects_a_malformed_symbol(cache):
+    from marketpulse.ai.analyst import NewsAnalyst
+    from tests.test_ai import FakeResponse, good_analysis, make_client
+
+    analyst = NewsAnalyst(client=make_client([FakeResponse(parsed=good_analysis())]),
+                          cache=cache)
+    assert _analyst_client(analyst).get("/v1/analysis/<script>").status_code in (404, 422)
+
+
+def test_streaming_endpoint_emits_sse_frames(cache):
+    from marketpulse.ai.analyst import NewsAnalyst
+    from tests.test_ai import make_client
+
+    analyst = NewsAnalyst(client=make_client(stream_chunks=["Hello ", "world"]), cache=cache)
+    r = _analyst_client(analyst).get("/v1/analysis/AAPL/stream")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    assert "data: Hello" in r.text
+    assert "event: done" in r.text
+
+
+def test_a_mid_stream_failure_arrives_as_an_error_event(cache):
+    """The status code is already 200 by then, so it has to travel in-band."""
+    from marketpulse.ai.analyst import NewsAnalyst
+    from tests.test_ai import make_client
+
+    analyst = NewsAnalyst(client=make_client(raises=Exception("429 rate limit")), cache=cache)
+    r = _analyst_client(analyst).get("/v1/analysis/AAPL/stream")
+    assert r.status_code == 200
+    assert "event: error" in r.text
+    assert "AIRateLimited" in r.text
+
+
+def test_insights_streams(cache):
+    from marketpulse.ai.analyst import NewsAnalyst
+    from tests.test_ai import make_client
+
+    analyst = NewsAnalyst(client=make_client(stream_chunks=["Markets are "]), cache=cache)
+    r = _analyst_client(analyst).post("/v1/insights", json={"question": "What is up?"})
+    assert r.status_code == 200
+    assert "data: Markets are" in r.text
+
+
+@pytest.mark.parametrize("question", ["", "a", "x" * 2000])
+def test_insights_rejects_out_of_range_questions(question, cache):
+    from marketpulse.ai.analyst import NewsAnalyst
+    from tests.test_ai import make_client
+
+    analyst = NewsAnalyst(client=make_client(stream_chunks=["ok"]), cache=cache)
+    r = _analyst_client(analyst).post("/v1/insights", json={"question": question})
+    assert r.status_code == 422

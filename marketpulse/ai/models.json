@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "Model catalog. One file, so the picker, the client and the cost table",
+    "cannot drift apart (pattern from virattt/ai-hedge-fund llm/registry.py).",
+    "",
+    "input_usd_per_mtok / output_usd_per_mtok are ESTIMATES and are not",
+    "verified against current published pricing. Cost reporting is labelled",
+    "'estimated' everywhere it surfaces, and a model with null rates reports",
+    "no cost rather than a fabricated one.",
+    "",
+    "Verify model ids and rates with: uv run python scripts/check_models.py"
+  ],
+  "pricing_verified_on": null,
+  "models": [
+    {
+      "id": "gemini-2.5-flash",
+      "display_name": "Gemini 2.5 Flash",
+      "provider": "google",
+      "default": true,
+      "supports_structured_output": true,
+      "supports_streaming": true,
+      "input_usd_per_mtok": 0.30,
+      "output_usd_per_mtok": 2.50
+    },
+    {
+      "id": "gemini-2.0-flash",
+      "display_name": "Gemini 2.0 Flash",
+      "provider": "google",
+      "default": false,
+      "fallback": true,
+      "supports_structured_output": true,
+      "supports_streaming": true,
+      "input_usd_per_mtok": 0.10,
+      "output_usd_per_mtok": 0.40
+    },
+    {
+      "id": "gemini-2.5-pro",
+      "display_name": "Gemini 2.5 Pro",
+      "provider": "google",
+      "default": false,
+      "supports_structured_output": true,
+      "supports_streaming": true,
+      "input_usd_per_mtok": 1.25,
+      "output_usd_per_mtok": 10.00
+    }
+  ]
+}

@@ -142,6 +142,19 @@ class NewsResponse(BaseModel):
     cached: bool = False
 
 
+# --- ai -------------------------------------------------------------------
+
+
+class InsightsRequest(BaseModel):
+    """A free-text market question.
+
+    Length-capped at the edge: an unbounded prompt is both a cost and an
+    injection surface, and no legitimate dashboard question needs 100KB.
+    """
+
+    question: str = Field(min_length=3, max_length=1000)
+
+
 # --- service metadata -----------------------------------------------------
 
 

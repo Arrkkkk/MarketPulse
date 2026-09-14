@@ -17,7 +17,7 @@ dependencies = [
     "plotly>=6.0,<7",
     "yfinance>=0.2.65,<0.3",
     "pycoingecko>=3.2,<4",
-    "google-generativeai>=0.8.5,<0.9",
+    "google-genai>=1.0,<2",
     "requests>=2.32,<3",
     "pydantic-settings>=2.4,<3",
 ]

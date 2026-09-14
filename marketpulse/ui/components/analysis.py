@@ -1,0 +1,127 @@
+"""AI analysis panel.
+
+Renders the structured verdict as a gauge, chips and flags rather than a
+wall of prose — which is the payoff for constraining the model's output.
+Provenance (model, cost, cached) is shown, not hidden: a user looking at
+AI-generated text should be able to see where it came from.
+"""
+
+from __future__ import annotations
+
+import streamlit as st
+
+from marketpulse.ai.schemas import AnalysisResult, Sentiment
+from marketpulse.client import MarketPulseClient, MarketPulseClientError
+from marketpulse.ui.components.state import show_error
+
+_SENTIMENT_STYLE: dict[Sentiment, tuple[str, str]] = {
+    Sentiment.BULLISH: ("▲", "Bullish"),
+    Sentiment.BEARISH: ("▼", "Bearish"),
+    Sentiment.NEUTRAL: ("■", "Neutral"),
+    Sentiment.MIXED: ("◆", "Mixed"),
+}
+
+
+def _verdict(result: AnalysisResult) -> None:
+    analysis = result.analysis
+    icon, label = _SENTIMENT_STYLE.get(analysis.sentiment, ("■", "Unknown"))
+
+    left, right = st.columns([1, 2])
+    with left:
+        st.metric("Sentiment", f"{icon} {label}")
+        st.progress(
+            analysis.confidence, text=f"Confidence {analysis.confidence:.0%}"
+        )
+    with right:
+        st.write(analysis.summary)
+
+    if analysis.key_themes:
+        st.caption("Themes")
+        st.write(" · ".join(f"`{t}`" for t in analysis.key_themes))
+
+    if analysis.risk_flags:
+        st.caption("Risks flagged")
+        for flag in analysis.risk_flags:
+            st.write(f"- {flag}")
+
+    if analysis.per_article:
+        with st.expander("Per-article read"):
+            for item in analysis.per_article:
+                sub_icon, sub_label = _SENTIMENT_STYLE.get(item.sentiment, ("■", "?"))
+                st.markdown(f"**{sub_icon} {sub_label}** — {item.title}")
+                st.caption(item.rationale)
+
+
+def _provenance(result: AnalysisResult) -> None:
+    bits = [f"Model: {result.model}"]
+    if result.fallback:
+        bits.append("fallback model")
+    if result.cached:
+        bits.append("cached")
+    if result.prompt_tokens and result.output_tokens:
+        bits.append(f"{result.prompt_tokens + result.output_tokens:,} tokens")
+    if result.estimated_cost_usd is not None:
+        # "estimated" is load-bearing: the rate table is not verified against
+        # live pricing, and a number presented as exact would be a claim we
+        # cannot support.
+        bits.append(f"~${result.estimated_cost_usd:.5f} estimated")
+    if result.latency_ms is not None:
+        bits.append(f"{result.latency_ms:,}ms")
+    st.caption(" · ".join(bits))
+
+
+def analysis_panel(client: MarketPulseClient, symbol: str, *, ai_enabled: bool) -> None:
+    """Streamed summary first, then the structured verdict.
+
+    Two calls on purpose. Structured output cannot be shown until it is
+    complete — half a JSON object is not half an answer — so the stream
+    carries prose for immediacy while the structured read follows.
+    """
+    if not ai_enabled:
+        st.info(
+            "AI analysis is unavailable: the server has no `GEMINI_API_KEY` configured."
+        )
+        return
+
+    if not st.button(f"Analyse {symbol} news", key=f"analyse_{symbol}"):
+        return
+
+    st.markdown("###### Summary")
+    try:
+        st.write_stream(client.stream_analysis(symbol))
+    except MarketPulseClientError as exc:
+        show_error(exc, context="AI summary")
+        return
+
+    st.markdown("###### Structured read")
+    try:
+        result = client.get_analysis(symbol)
+    except MarketPulseClientError as exc:
+        show_error(exc, context="AI analysis")
+        return
+
+    _verdict(result)
+    _provenance(result)
+
+
+def insights_panel(client: MarketPulseClient, *, ai_enabled: bool) -> None:
+    """The free-text market question box."""
+    st.subheader("Ask the market analyst")
+    if not ai_enabled:
+        st.info("Unavailable: the server has no `GEMINI_API_KEY` configured.")
+        return
+
+    question = st.text_area(
+        "Question",
+        value="What are the major trends driving global equity and crypto markets?",
+        height=90,
+        max_chars=1000,
+    )
+    if st.button("Ask", key="ask_insights"):
+        if not question.strip():
+            st.warning("Enter a question first.")
+            return
+        try:
+            st.write_stream(client.stream_insights(question))
+        except MarketPulseClientError as exc:
+            show_error(exc, context="AI insights")

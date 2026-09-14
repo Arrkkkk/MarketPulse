@@ -17,9 +17,18 @@ from streamlit_autorefresh import st_autorefresh
 from marketpulse.client import DEFAULT_BASE_URL, MarketPulseClient, MarketPulseClientError
 from marketpulse.schema.api import is_valid_symbol
 from marketpulse.schema.exchanges import currency_for_symbol
-from marketpulse.ui.components import charts, panels, state
+from marketpulse.ui.components import analysis, charts, panels, state
 
 SNAPSHOT_STEP = 4
+
+
+@st.cache_data(ttl=300)
+def service_info() -> dict:
+    """What the service can do. Cached: it does not change per rerun."""
+    try:
+        return get_client().info().model_dump()
+    except MarketPulseClientError:
+        return {}
 
 
 @st.cache_resource
@@ -190,6 +199,11 @@ def _stock_detail(client: MarketPulseClient) -> None:
     except MarketPulseClientError as exc:
         state.show_error(exc, context="News")
 
+    st.markdown("##### AI analysis")
+    analysis.analysis_panel(
+        client, raw, ai_enabled=bool(service_info().get("ai_enabled"))
+    )
+
 
 def _crypto_detail(client: MarketPulseClient) -> None:
     st.subheader("Cryptocurrency detail")
@@ -244,6 +258,9 @@ def main() -> None:
         _stock_detail(client)
     else:
         _crypto_detail(client)
+
+    st.divider()
+    analysis.insights_panel(client, ai_enabled=bool(service_info().get("ai_enabled")))
 
 
 if __name__ == "__main__":

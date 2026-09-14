@@ -18,9 +18,12 @@ Adapted from JoshuaC215/agent-service-toolkit `src/client/client.py`.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import httpx
 import pandas as pd
 
+from marketpulse.ai.schemas import AnalysisResult
 from marketpulse.schema.api import (
     HistoryResponse,
     NewsResponse,
@@ -176,6 +179,54 @@ class MarketPulseClient:
 
     def search_news(self, query: str, limit: int = 5) -> NewsResponse:
         return NewsResponse.model_validate(self._get("/v1/news", q=query, limit=limit))
+
+    # -- ai ---------------------------------------------------------------
+
+    def get_analysis(
+        self, symbol: str, limit: int = 5, refresh: bool = False
+    ) -> AnalysisResult:
+        return AnalysisResult.model_validate(
+            self._get(f"/v1/analysis/{symbol}", limit=limit, refresh=refresh)
+        )
+
+    def stream_analysis(self, symbol: str, limit: int = 5) -> Iterator[str]:
+        """Yield summary text as the model produces it."""
+        yield from self._stream(
+            "GET", f"/v1/analysis/{symbol}/stream", params={"limit": limit}
+        )
+
+    def stream_insights(self, question: str) -> Iterator[str]:
+        yield from self._stream("POST", "/v1/insights", json={"question": question})
+
+    def _stream(self, method: str, path: str, **kwargs) -> Iterator[str]:
+        """Consume an SSE endpoint, yielding the text of each data event.
+
+        An error arriving mid-stream cannot change the status code, so the
+        service sends it as an `event: error` frame; this turns that back
+        into an exception the caller can handle like any other.
+        """
+        try:
+            with self._http.stream(method, path, timeout=120.0, **kwargs) as response:
+                if response.status_code >= 400:
+                    response.read()
+                    raise self._to_error(response)
+
+                event = "message"
+                for line in response.iter_lines():
+                    if not line:
+                        event = "message"
+                        continue
+                    if line.startswith("event:"):
+                        event = line[6:].strip()
+                    elif line.startswith("data:"):
+                        data = line[5:].lstrip()
+                        if event == "error":
+                            raise MarketPulseClientError(data, code="ai_stream_error")
+                        if event == "done":
+                            return
+                        yield data
+        except httpx.HTTPError as exc:
+            raise MarketPulseClientError(f"stream failed: {exc}") from exc
 
 
 def bars_to_frame(response: HistoryResponse) -> pd.DataFrame:

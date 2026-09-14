@@ -27,6 +27,18 @@ from marketpulse.services.news_service import NewsService
 
 
 @lru_cache(maxsize=1)
+def build_analyst():
+    """NewsAnalyst over a lazily-constructed Gemini client.
+
+    Imported here rather than at module top so that the AI stack is only
+    loaded when something actually asks for it.
+    """
+    from marketpulse.ai.analyst import NewsAnalyst
+
+    return NewsAnalyst()
+
+
+@lru_cache(maxsize=1)
 def build_market_service() -> MarketService:
     """MarketService over cached yfinance and CoinGecko providers."""
     return MarketService(

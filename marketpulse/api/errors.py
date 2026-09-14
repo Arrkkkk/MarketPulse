@@ -21,6 +21,15 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from marketpulse.ai.errors import (
+    AIContentFiltered,
+    AIContextTooLong,
+    AIError,
+    AIInvalidOutput,
+    AINotConfigured,
+    AIRateLimited,
+    AIUnavailable,
+)
 from marketpulse.platform.http import CircuitOpenError
 from marketpulse.platform.telemetry import current_request_id
 from marketpulse.providers.errors import (
@@ -103,6 +112,46 @@ def provider_error_response(exc: ProviderError | CircuitOpenError) -> JSONRespon
     )
 
 
+def ai_error_response(exc: AIError) -> JSONResponse:
+    """Translate an AI failure into its HTTP form."""
+    if isinstance(exc, AINotConfigured):
+        return error_response(
+            503, "ai_not_configured",
+            "AI analysis needs a GEMINI_API_KEY that is not configured on the server.",
+            detail=str(exc),
+        )
+    if isinstance(exc, AIRateLimited):
+        headers = {"Retry-After": str(int(exc.retry_after))} if exc.retry_after else None
+        return error_response(
+            429, "ai_rate_limited",
+            "The AI provider is rate-limiting us. Try again shortly.",
+            detail=str(exc), headers=headers,
+        )
+    if isinstance(exc, AIContextTooLong):
+        return error_response(
+            413, "ai_context_too_long",
+            "There was too much text to analyse. Try fewer articles.",
+            detail=str(exc),
+        )
+    if isinstance(exc, AIContentFiltered):
+        return error_response(
+            422, "ai_content_filtered",
+            "The model declined to analyse this content.",
+            detail=str(exc),
+        )
+    if isinstance(exc, AIInvalidOutput):
+        return error_response(
+            502, "ai_invalid_output",
+            "The model did not return a usable analysis.",
+            detail=str(exc),
+        )
+    if isinstance(exc, AIUnavailable):
+        return error_response(
+            502, "ai_unavailable", "The AI provider could not be reached.", detail=str(exc)
+        )
+    return error_response(502, "ai_error", "The AI provider returned an error.", detail=str(exc))
+
+
 def install_exception_handlers(app) -> None:
     """Register handlers so no endpoint has to write try/except itself."""
 
@@ -110,6 +159,11 @@ def install_exception_handlers(app) -> None:
     async def _provider(_request: Request, exc: ProviderError) -> JSONResponse:
         logger.warning("provider error: %s", exc)
         return provider_error_response(exc)
+
+    @app.exception_handler(AIError)
+    async def _ai(_request: Request, exc: AIError) -> JSONResponse:
+        logger.warning("ai error: %s", exc)
+        return ai_error_response(exc)
 
     @app.exception_handler(CircuitOpenError)
     async def _circuit(_request: Request, exc: CircuitOpenError) -> JSONResponse:
