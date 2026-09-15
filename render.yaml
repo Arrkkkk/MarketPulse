@@ -1,0 +1,73 @@
+# Render Blueprint — two services from one image, one private, one public,
+# matching compose.yaml and fly.toml's shape. Deploy via the Render
+# dashboard: New > Blueprint, point it at this repo. See docs/deploying.md
+# for the full walkthrough, including the one code change this needed
+# (marketpulse/client/client.py, base URL scheme normalisation) and why.
+
+services:
+  # Private: the API. `type: pserv` means no public onrender.com subdomain
+  # at all — unreachable from the internet by construction, not by a
+  # runtime check. The paid AI endpoints are therefore not exposed, the
+  # same property Fly's private network and Cloud Run's IAM check both
+  # give, achieved here with neither a token nor a VPC.
+  - name: marketpulse-api
+    type: pserv
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: LOG_FORMAT
+        value: json
+      - key: LOG_LEVEL
+        value: INFO
+      # Render terminates TLS and forwards plain HTTP internally, same
+      # reasoning as Fly and Cloud Run: without this, the rate limiter
+      # would see every request as coming from Render's edge and throttle
+      # all users as one.
+      - key: MARKETPULSE_TRUST_PROXY
+        value: "1"
+      # sync: false — Render prompts for each of these in the dashboard
+      # when the blueprint is first created, and stores them as secrets,
+      # never in this file or in git. Every credential is optional, same
+      # rule as everywhere else in this project: leave one blank in the
+      # dashboard and the matching feature reports itself as unconfigured.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: NEWS_API_KEY
+        sync: false
+      - key: MARKETAUX_API_KEY
+        sync: false
+    disk:
+      name: marketpulse-cache
+      mountPath: /home/marketpulse/.marketpulse
+      sizeGB: 1
+
+  # Public: the dashboard. Same image as marketpulse-api; dockerCommand
+  # overrides the image's default CMD (uvicorn) to run Streamlit instead.
+  - name: marketpulse-ui
+    type: web
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: >-
+      streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+      --server.headless=true --browser.gatherUsageStats=false
+    plan: starter
+    region: oregon
+    healthCheckPath: /
+    envVars:
+      - key: LOG_FORMAT
+        value: json
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MARKETPULSE_TRUST_PROXY
+        value: "1"
+      # "host:port" with no scheme — MarketPulseClient adds http:// itself
+      # when one is missing. There is no fromService property that
+      # includes a scheme (only host, port, and this — hostport — exist).
+      - key: MARKETPULSE_API_URL
+        fromService:
+          name: marketpulse-api
+          type: pserv
+          property: hostport

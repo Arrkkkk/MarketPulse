@@ -21,6 +21,45 @@ uv run uvicorn marketpulse.api.main:app --reload    # :8000
 uv run streamlit run app.py                         # :8501
 ```
 
+## Render
+
+`render.yaml` is committed and configured — a Blueprint, Render's own
+declarative multi-service format, closer to `fly.toml` than Cloud Run's
+setup could be: Render's private services are the one platform here whose
+privacy is structural, not a runtime check.
+
+**Deploy:** in the Render dashboard, **New > Blueprint**, point it at this
+repo. Render reads `render.yaml`, shows both services it's about to
+create, and prompts for the three secret env vars marked `sync: false`
+(`GEMINI_API_KEY`, `NEWS_API_KEY`, `MARKETAUX_API_KEY`) — leave any of them
+blank and the matching feature reports itself as unconfigured, same rule
+as everywhere else. Nothing is stored in the file or in git.
+
+**How the API stays private.** `marketpulse-api` is declared `type: pserv`
+— a private service, which Render never assigns a public `onrender.com`
+subdomain at all. It isn't reachable from the internet because there is no
+route to it, not because something checks and rejects a request the way
+Cloud Run's IAM layer does. `marketpulse-ui` reaches it over Render's
+private network, wired automatically at deploy time via `fromService`.
+
+**The one code change this needed**, in `marketpulse/client/client.py`:
+render.yaml's `fromService` / `property: hostport` hands the UI a bare
+`host:port` for the private service — no property that includes a scheme
+exists — so `MarketPulseClient` now adds `http://` itself when the base
+URL doesn't already have one. A no-op for every other deployment shape,
+which all already supply a full URL.
+
+**Health checks and disk.** Both services declare `healthCheckPath`
+against the endpoints this project already exposes (`/health` for the
+API); the API mounts a 1GB disk at the same path Fly's volume uses, so the
+SQLite cache tier works exactly as written.
+
+**Cost.** Render's free tier covers a `web` service (with the trade-off
+that it spins down after 15 minutes idle) but not a `pserv` — a private
+service and its disk are billed regardless of traffic. Confirm the current
+`starter` plan price in the Render dashboard before deploying; this file
+states the mechanism, not a number that changes on Render's own schedule.
+
 ## Google Cloud Run
 
 `scripts/deploy_cloud_run.sh` is committed and configured — the Cloud Run
