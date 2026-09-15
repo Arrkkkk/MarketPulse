@@ -55,6 +55,38 @@ def test_a_fully_cached_batch_makes_no_upstream_call(cache):
     assert all(h.cached for h in result.values())
 
 
+def test_a_failed_fetch_for_the_missing_symbols_does_not_lose_what_was_cached(cache):
+    """The real bug this guards against: on a live deploy, a batch of 28
+    cached symbols plus one new one (GOOGL) failed entirely because the
+    upstream returned nothing for GOOGL alone — turning "one symbol is
+    temporarily unavailable" into "the whole stocks overview is
+    degraded," the exact all-or-nothing failure this project's provider
+    contract exists to rule out everywhere else.
+    """
+    inner = FakePriceProvider(
+        histories={"AAPL": make_history("AAPL"), "MSFT": make_history("MSFT")}
+    )
+    provider = CachedPriceProvider(inner, cache)
+    provider.get_histories(["AAPL", "MSFT"])  # populate the cache
+
+    # GOOGL isn't in `inner.histories`, so the fake raises exactly the way
+    # the real yfinance provider does when a batch download comes back
+    # with nothing usable for the requested symbol.
+    result = provider.get_histories(["AAPL", "MSFT", "GOOGL"])
+
+    assert set(result) == {"AAPL", "MSFT"}, "the two cached symbols must survive GOOGL's failure"
+
+
+def test_a_totally_failed_batch_with_nothing_cached_still_raises(cache):
+    """Empty means empty, not "we have no idea" — with nothing to fall
+    back on, this must still fail loud rather than return {}."""
+    inner = FakePriceProvider(histories={})
+    provider = CachedPriceProvider(inner, cache)
+
+    with pytest.raises(ProviderUnavailable):
+        provider.get_histories(["GOOGL"])
+
+
 @pytest.mark.parametrize(
     "error",
     [

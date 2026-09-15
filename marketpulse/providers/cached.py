@@ -12,6 +12,14 @@ Failure semantics are inherited, which is the important part: only successful
 responses are written, and every exception propagates untouched. Caching a
 failure would turn a thirty-second outage into a twelve-hour one.
 
+The one exception is `CachedPriceProvider.get_histories()`, which already
+has partial-success semantics on its read side (serve what's cached, fetch
+only what's missing) and would otherwise contradict them on its write side:
+one upstream failure while fetching the *missing* symbols used to discard
+the already-cached ones too, turning "one symbol is temporarily
+unavailable" into "the whole batch is." It still raises when there is
+nothing to fall back on.
+
 Adapted from virattt/ai-hedge-fund `hedge_fund/data/cached.py`.
 """
 
@@ -28,6 +36,7 @@ from marketpulse.platform.cache import (
     make_key,
 )
 from marketpulse.platform.telemetry import get_logger
+from marketpulse.providers.errors import ProviderError
 from marketpulse.providers.protocol import CryptoProvider, NewsProvider, PriceProvider
 from marketpulse.schema import CompanyProfile, CryptoQuote, NewsResult, PriceHistory
 from marketpulse.schema.market import SymbolMatch
@@ -82,7 +91,28 @@ class CachedPriceProvider:
 
         if missing:
             logger.info("batch: %d cached, %d to fetch", len(out), len(missing))
-            fetched = self._inner.get_histories(missing, period, interval)
+            try:
+                fetched = self._inner.get_histories(missing, period, interval)
+            except ProviderError as exc:
+                # A batch fetch for the symbols the cache didn't have can
+                # fail entirely — one rate-limited call is enough — without
+                # that meaning the symbols the cache *did* have are gone
+                # too. If there's nothing to fall back on this really is a
+                # total failure and should still raise (empty means empty,
+                # not "we have no idea"); if there is, this degrades to a
+                # partial result instead of discarding it. The gap is not
+                # swallowed — market_service's own missing-symbol check
+                # reports exactly what's absent from what this returns.
+                if not out:
+                    raise
+                logger.warning(
+                    "batch fetch for %d of %d symbols failed (%s); serving %d from cache",
+                    len(missing),
+                    len(symbols),
+                    exc,
+                    len(out),
+                )
+                return out
             for symbol, history in fetched.items():
                 key = make_key(
                     f"{self.name}:history", symbol=symbol, period=period, interval=interval
