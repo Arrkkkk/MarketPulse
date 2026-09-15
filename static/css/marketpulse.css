@@ -51,15 +51,51 @@
  *
  * Hardcoded rather than read from a Streamlit internal CSS variable:
  * none is documented, and the whole reason this file targets data-testid
- * instead of class names is to not depend on undocumented internals. */
-[data-testid="stAppViewContainer"] :focus-visible {
-  outline: 2px solid #0e5f73;
-  outline-offset: 2px;
+ * instead of class names is to not depend on undocumented internals.
+ *
+ * `!important` here specifically: confirmed by tabbing through a live
+ * render that the small anchor Streamlit adds next to every heading (for
+ * a shareable section link) sets its own `outline-style: none` on focus,
+ * which otherwise wins and leaves a fully keyboard-reachable link with no
+ * visible focus indicator at all — a real WCAG 2.4.7 gap this closes for
+ * every such anchor, not a specificity fight of this file's own making. */
+[data-testid="stAppViewContainer"] :focus-visible,
+[data-testid="stHeaderActionElements"] a:focus-visible {
+  outline: 2px solid #0e5f73 !important;
+  outline-offset: 2px !important;
 }
 
 @media (prefers-color-scheme: dark) {
-  [data-testid="stAppViewContainer"] :focus-visible {
-    outline-color: #4badc4;
+  [data-testid="stAppViewContainer"] :focus-visible,
+  [data-testid="stHeaderActionElements"] a:focus-visible {
+    outline-color: #4badc4 !important;
+  }
+}
+
+/* Interactive control borders (text input, text area, number input,
+ * selectbox): computed at 3.1-3.4:1 against both the page and a raised
+ * surface, meeting WCAG 1.4.11's non-text contrast floor for a UI
+ * component's boundary. theme.borderColor itself stays the softer hairline
+ * (~1.2-1.8:1) it already was — this file draws a line between an
+ * interactive control, which a person needs to be able to locate, and a
+ * passive divider like a tile or table-row border, which content and
+ * spacing already identify without needing its edge to carry that weight
+ * on its own. The selectbox rule is broader than the others because its
+ * bordered element carries no data-testid to anchor to (confirmed against
+ * the real DOM) — safe regardless, since `border-color` has no visible
+ * effect on an element that has no border-style of its own. */
+[data-testid="stTextInputRootElement"],
+[data-testid="stTextAreaRootElement"],
+[data-testid="stNumberInputContainer"],
+[data-testid="stSelectbox"] div {
+  border-color: #878c8d !important;
+}
+@media (prefers-color-scheme: dark) {
+  [data-testid="stTextInputRootElement"],
+  [data-testid="stTextAreaRootElement"],
+  [data-testid="stNumberInputContainer"],
+  [data-testid="stSelectbox"] div {
+    border-color: #546978 !important;
   }
 }
 
@@ -149,6 +185,16 @@
  * columns elsewhere on the page. */
 [data-testid="stColumn"]:has([class*="st-key-tile-"]) {
   animation: mp-tile-enter 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Streamlit's own row is already flex-wrap: wrap, but each column's
+   * flex-shrink has no floor, so 4 columns can (and, confirmed against a
+   * live 810px render with the sidebar open, did) shrink to ~105px before
+   * ever wrapping — narrow enough that "0005.HK" and its own price both
+   * ellipsize. A min-width gives flexbox an actual floor to hit, so it
+   * wraps to 3, then 2, then 1 per row as the viewport narrows, without
+   * any Python-side breakpoint — there is no viewport signal to base one
+   * on (st.context carries no width), so this is the only lever available,
+   * and it is the one CSS already exposes for exactly this. */
+  min-width: 168px !important;
 }
 [data-testid="stColumn"]:has([class*="st-key-tile-"]):nth-child(1) {
   animation-delay: 0ms;

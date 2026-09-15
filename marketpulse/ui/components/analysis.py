@@ -12,7 +12,7 @@ import streamlit as st
 
 from marketpulse.ai.schemas import AnalysisResult, Sentiment
 from marketpulse.client import MarketPulseClient, MarketPulseClientError
-from marketpulse.ui.components.state import show_error
+from marketpulse.ui.components.state import ICON_DEGRADED, ICON_EMPTY, show_error
 
 #: (glyph, label, CSS slug). "up"/"down" reuse the same rail and verdict-
 #: band colours as everywhere else in the app that shows direction; the
@@ -96,7 +96,10 @@ def analysis_panel(client: MarketPulseClient, symbol: str, *, ai_enabled: bool) 
     carries prose for immediacy while the structured read follows.
     """
     if not ai_enabled:
-        st.info("AI analysis is unavailable: the server has no `GEMINI_API_KEY` configured.")
+        st.info(
+            "AI analysis is unavailable: the server has no `GEMINI_API_KEY` configured.",
+            icon=ICON_EMPTY,
+        )
         return
 
     if not st.button(f"Analyse {symbol} news", key=f"analyse_{symbol}"):
@@ -124,7 +127,7 @@ def insights_panel(client: MarketPulseClient, *, ai_enabled: bool) -> None:
     """The free-text market question box."""
     st.subheader("Ask the market analyst")
     if not ai_enabled:
-        st.info("Unavailable: the server has no `GEMINI_API_KEY` configured.")
+        st.info("Unavailable: the server has no `GEMINI_API_KEY` configured.", icon=ICON_EMPTY)
         return
 
     question = st.text_area(
@@ -135,7 +138,7 @@ def insights_panel(client: MarketPulseClient, *, ai_enabled: bool) -> None:
     )
     if st.button("Ask", key="ask_insights"):
         if not question.strip():
-            st.warning("Enter a question first.")
+            st.warning("Enter a question first.", icon=ICON_DEGRADED)
             return
         try:
             st.write_stream(client.stream_insights(question))

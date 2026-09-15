@@ -117,10 +117,10 @@ Against the pre-refactor baseline, same machine and network. Re-measure with
 
 | | Before | After | |
 |---|---:|---:|---|
-| Cold start, 29-symbol overview | 45.5s | **1.38s** | 33× |
-| Warm overview, in process | — | 0.057s | |
-| Warm overview, new process | — | 0.016s | what a second visitor pays |
-| `GET /v1/overview` p95 | — | **24ms** | |
+| Cold start, 29-symbol overview | 45.5s | **1.9s** | 24× |
+| Warm overview, in process | — | 0.03–0.07s | |
+| Warm overview, new process | — | 0.04–0.07s | what a second visitor pays |
+| `GET /v1/overview` p95 | — | **19ms** | |
 | `IBM period=max` on the wire | ~1.4MB | **38KB** | 37×, gzipped, shape intact |
 | `/v1/overview`, gzipped, with sparklines | 2.3KB | **6.8KB** | +4.5KB for a trend line on 29 tiles — [ADR 11](docs/adr/0011-sparkline-payload.md) |
 | Symbols resolving | 27/29 | **29/29** | two were delisted |
@@ -130,6 +130,13 @@ Against the pre-refactor baseline, same machine and network. Re-measure with
 
 The 45.5s figure decomposed as 21s of `.info` calls, 14.6s of hardcoded
 `sleep(0.5)`, and 9.9s of actual fetching, one symbol at a time.
+
+Cold start varies with Yahoo Finance's own response time on the day —
+three fresh runs while re-measuring this table came back 1.7s, 1.9s and
+2.8s, all against the same 29 symbols. The multiplier moves with it; the
+architecture doesn't. `GET /v1/overview` p95 and the wire-size rows come
+from the HTTP layer instead, and hold steady across runs the cold-start
+number doesn't.
 
 ## Verified against the live API
 
@@ -177,6 +184,27 @@ returned nothing.
 `X-Forwarded-For` is honoured only under `MARKETPULSE_TRUST_PROXY=1` — the
 header is forgeable without a proxy in front, and a test asserts a spray of
 forged addresses still hits the limit.
+
+## Accessibility
+
+Checked against a live rendered page, not asserted from the token values —
+the same discipline as the numbers above.
+
+| | |
+|---|---|
+| Contrast | Every text/background pairing in both themes computed against WCAG's relative-luminance formula: body text 15.6–17.9:1, the accent 6.7–7.3:1, price up/down 5.6–8.4:1 — all comfortably over the 4.5:1 floor for normal text |
+| Colour independence | Price direction always carries a glyph (▲/▼) and a signed number, never colour alone — the app's one hard rule, since red/green is the worst-case pairing for the most common colour-vision deficiency |
+| Alert severity | `st.info`/`warning`/`error` render with no icon at all by default in this Streamlit version — confirmed by inspecting a live render, not assumed — so every one now carries an explicit Material icon; the three states read apart by shape, not only by the tint of the band behind them |
+| Keyboard | Every interactive element reachable by Tab carries a visible 2px focus ring, verified by scripting real Tab key-presses against a live page. One real gap found this way: Streamlit's own "link to this heading" anchors set `outline: none` on focus, leaving a keyboard-reachable link with no visible indicator — fixed with a scoped override |
+| Reduced motion | Every automatic animation (price flash, tile entrance, skeleton shimmer) disables under `prefers-reduced-motion`, with the information it carried kept — a flash's rail stays, a skeleton's shape stays |
+| Responsive | `initial_sidebar_state="auto"` rather than a forced-open sidebar, which ate roughly half a 390px viewport in the redesign's first pass; snapshot tiles carry a `min-width` so flexbox wraps them to fewer per row as the viewport narrows — confirmed at 390px (1 column), 810px (2) and 1440px (4). Streamlit's Python side has no viewport-width signal at all (`st.context` carries no size), so this is a CSS floor, not a server-side breakpoint |
+| Screen reader text | Sparklines carry `role="img"` and a stated-in-words `aria-label` ("30-day trend: rose from 303.16 to 333.08, +9.9%"); charts keep a disclosed data table alongside the canvas |
+
+**Known limit:** a fragment refresh replaces the Markets page's tiles with no
+screen-reader announcement of what changed. An `aria-live` region was
+considered and rejected for now — on a 60-second timer it would announce
+itself every minute regardless of whether anything moved, which trades a
+real gap for a worse one.
 
 ## Layout
 

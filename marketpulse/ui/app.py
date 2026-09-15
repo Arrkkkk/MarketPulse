@@ -51,7 +51,12 @@ def main() -> None:
         layout="wide",
         page_title="MarketPulse",
         page_icon="📈",
-        initial_sidebar_state="expanded",
+        # "expanded" forced the sidebar open unconditionally — on a 390px
+        # viewport it ate roughly half the screen and clipped the masthead
+        # text behind it (confirmed against a live emulated mobile render).
+        # "auto" is Streamlit's own responsive default: shown on desktop,
+        # hidden on a small device, no custom breakpoint logic needed.
+        initial_sidebar_state="auto",
     )
     inject_styles()
     masthead.render(get_client())

@@ -16,6 +16,15 @@ import streamlit as st
 
 from marketpulse.client import MarketPulseClientError
 
+#: One icon per severity, used everywhere a state renders — so "empty",
+#: "degraded" and "failed" are distinguishable by shape, not only by the
+#: colour of the band behind them. Verified against a live render: with no
+#: icon passed, Streamlit's info/warning/error bands in this version carry
+#: no glyph at all, so colour was the *only* signal before this.
+ICON_EMPTY = ":material/info:"
+ICON_DEGRADED = ":material/warning:"
+ICON_FAILED = ":material/error:"
+
 #: Human wording per service error code. Anything unmapped falls back to the
 #: service's own message, which is already written for display.
 _MESSAGES = {
@@ -39,19 +48,20 @@ def show_error(exc: MarketPulseClientError, *, context: str = "") -> None:
     prefix = f"**{context}** — " if context else ""
 
     if exc.code == "symbol_not_found":
-        st.info(f"{prefix}{message}")
+        st.info(f"{prefix}{message}", icon=ICON_EMPTY)
     elif exc.code in ("rate_limited", "provider_circuit_open"):
         wait = f" Try again in about {exc.retry_after}s." if exc.retry_after else ""
-        st.warning(f"{prefix}{message}{wait}")
+        st.warning(f"{prefix}{message}{wait}", icon=ICON_DEGRADED)
     elif exc.code == "provider_not_configured":
-        st.info(f"{prefix}{message}")
+        st.info(f"{prefix}{message}", icon=ICON_EMPTY)
     elif exc.code is None:
         st.error(
             f"{prefix}Cannot reach the MarketPulse API. Is it running? "
-            f"Start it with `uv run uvicorn marketpulse.api.main:app`."
+            f"Start it with `uv run uvicorn marketpulse.api.main:app`.",
+            icon=ICON_FAILED,
         )
     else:
-        st.error(f"{prefix}{message}")
+        st.error(f"{prefix}{message}", icon=ICON_FAILED)
 
     if exc.request_id:
         st.caption(f"Request ID `{exc.request_id}`")
@@ -59,7 +69,7 @@ def show_error(exc: MarketPulseClientError, *, context: str = "") -> None:
 
 def show_empty(message: str) -> None:
     """Genuinely nothing to show — distinct from a failure."""
-    st.info(message)
+    st.info(message, icon=ICON_EMPTY)
 
 
 def freshness_caption(as_of: datetime | None, cached: bool) -> None:
@@ -128,4 +138,4 @@ def degraded_banner(failures: dict[str, str]) -> None:
         "missing_symbols": "Some symbols returned no data",
     }
     lines = [f"- **{labels.get(k, k)}**: {v}" for k, v in failures.items()]
-    st.warning("Some data could not be loaded:\n" + "\n".join(lines))
+    st.warning("Some data could not be loaded:\n" + "\n".join(lines), icon=ICON_DEGRADED)

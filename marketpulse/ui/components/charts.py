@@ -9,6 +9,7 @@ from plotly.subplots import make_subplots
 from marketpulse.client import bars_to_frame
 from marketpulse.schema.api import HistoryResponse
 from marketpulse.ui import theme
+from marketpulse.ui.components.state import ICON_EMPTY
 
 #: Ranges offered in the selector. The old UI always requested `period='max'`
 #: and rendered every bar — 16,283 rows for IBM, ~1.4MB of JSON per rerun.
@@ -83,7 +84,7 @@ def price_chart(response: HistoryResponse, currency: str = "USD") -> None:
     """
     frame = bars_to_frame(response)
     if frame.empty:
-        st.info("No price data in this range.")
+        st.info("No price data in this range.", icon=ICON_EMPTY)
         return
 
     has_volume = frame["volume"].sum() > 0
@@ -158,7 +159,7 @@ def price_chart(response: HistoryResponse, currency: str = "USD") -> None:
 def line(response: HistoryResponse, label: str, currency: str = "USD") -> None:
     frame = bars_to_frame(response)
     if frame.empty:
-        st.info("No price data in this range.")
+        st.info("No price data in this range.", icon=ICON_EMPTY)
         return
 
     # Coloured by the range's own trend, same vocabulary as every other

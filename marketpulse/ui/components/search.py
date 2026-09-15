@@ -16,7 +16,7 @@ import streamlit as st
 
 from marketpulse.client import MarketPulseClient, MarketPulseClientError
 from marketpulse.schema.api import is_valid_symbol
-from marketpulse.ui.components.state import show_error
+from marketpulse.ui.components.state import ICON_EMPTY, show_error
 
 #: Quote types worth offering. Yahoo also returns futures, options and
 #: mutual funds, which this dashboard cannot chart usefully.
@@ -84,7 +84,10 @@ def symbol_input(client: MarketPulseClient, *, key: str = "symbol_query") -> str
     if not matches:
         # A well-formed query that matched nothing — distinct from a search
         # that failed, which took the branch above.
-        st.info(f"No symbols found for “{query}”. Try a company name or an exact ticker.")
+        st.info(
+            f"No symbols found for “{query}”. Try a company name or an exact ticker.",
+            icon=ICON_EMPTY,
+        )
         return previous
 
     labels = [m.label for m in matches]

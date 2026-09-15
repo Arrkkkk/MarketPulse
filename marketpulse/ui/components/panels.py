@@ -6,7 +6,7 @@ import streamlit as st
 
 from marketpulse.schema.api import NewsResponse
 from marketpulse.schema.market import CompanyProfile, CryptoQuote, Quote
-from marketpulse.ui.components.state import freshness_caption
+from marketpulse.ui.components.state import ICON_EMPTY, freshness_caption
 
 SNAPSHOT_COLUMNS = 4
 
@@ -147,7 +147,7 @@ def stock_snapshots(quotes: list[Quote], limit: int) -> None:
     """A grid of price tiles with day-over-day deltas."""
     shown = quotes[:limit]
     if not shown:
-        st.info("No stock quotes available.")
+        st.info("No stock quotes available.", icon=ICON_EMPTY)
         return
     columns = st.columns(SNAPSHOT_COLUMNS)
     for i, quote in enumerate(shown):
@@ -174,7 +174,7 @@ def stock_snapshots(quotes: list[Quote], limit: int) -> None:
 def crypto_snapshots(quotes: list[CryptoQuote], limit: int) -> None:
     shown = quotes[:limit]
     if not shown:
-        st.info("No crypto quotes available.")
+        st.info("No crypto quotes available.", icon=ICON_EMPTY)
         return
     columns = st.columns(SNAPSHOT_COLUMNS)
     for i, quote in enumerate(shown):
@@ -266,7 +266,7 @@ def news_panel(result: NewsResponse) -> None:
         st.caption(f"Source: {result.source}")
 
     if not result.articles:
-        st.info("No recent articles found for this asset in the last 7 days.")
+        st.info("No recent articles found for this asset in the last 7 days.", icon=ICON_EMPTY)
         return
 
     for article in result.articles:
