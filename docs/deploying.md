@@ -21,48 +21,62 @@ uv run uvicorn marketpulse.api.main:app --reload    # :8000
 uv run streamlit run app.py                         # :8501
 ```
 
-## Render
+## Render (free tier)
 
-`render.yaml` is committed and configured — a Blueprint, Render's own
-declarative multi-service format, closer to `fly.toml` than Cloud Run's
-setup could be: Render's private services are the one platform here whose
-privacy is structural, not a runtime check.
+`render.yaml` is committed and configured for **one free web service, no
+payment method required.**
 
-**Deploy:** in the Render dashboard, **New > Blueprint**, point it at this
-repo. Render reads `render.yaml`, shows both services it's about to
-create, and prompts for the three secret env vars marked `sync: false`
-(`GEMINI_API_KEY`, `NEWS_API_KEY`, `MARKETAUX_API_KEY`) — leave any of them
-blank and the matching feature reports itself as unconfigured, same rule
-as everywhere else. Nothing is stored in the file or in git.
+This is a different shape from every other target in this file, for a
+specific reason: Render's free tier has no private-service option at all,
+and a *free web* service "can't receive private network traffic" either
+(Render's own free-tier documentation, checked directly rather than
+assumed after the paid two-service design below hit exactly this wall).
+The API-as-a-second-service pattern Fly, Cloud Run and Render's own paid
+tier all use is therefore not reachable for free on this platform, full
+stop — there's no cheaper flag or workaround for it.
 
-**How the API stays private.** `marketpulse-api` is declared `type: pserv`
-— a private service, which Render never assigns a public `onrender.com`
-subdomain at all. It isn't reachable from the internet because there is no
-route to it, not because something checks and rejects a request the way
-Cloud Run's IAM layer does. `marketpulse-ui` reaches it over Render's
-private network, wired automatically at deploy time via `fromService`.
+**What runs instead:** `scripts/start_combined.sh` starts both processes
+in the one container Render deploys. The API binds to `127.0.0.1` only —
+not "not publicly routed," genuinely unreachable from anywhere but this
+same container, since it never touches an interface a neighbour service
+or a platform-level check could ever reach. That's stronger isolation than
+a private-network hop, not a compromise. Streamlit binds to `0.0.0.0` on
+whatever port Render injects via `$PORT` and is the only thing actually
+exposed. Verified locally end to end before being written down here:
+booted the script, confirmed uvicorn logs `Uvicorn running on
+http://127.0.0.1:8000` (loopback, not a wildcard bind), and pulled real
+data back through `/v1/overview` on the far side of the UI.
 
-**The one code change this needed**, in `marketpulse/client/client.py`:
-render.yaml's `fromService` / `property: hostport` hands the UI a bare
-`host:port` for the private service — no property that includes a scheme
-exists — so `MarketPulseClient` now adds `http://` itself when the base
-URL doesn't already have one. A no-op for every other deployment shape,
-which all already supply a full URL.
+**Deploy:** Render dashboard → **New > Blueprint** → point it at this
+repo. It reads `render.yaml`, shows the one service, and prompts for the
+three secrets marked `sync: false` — leave any blank and the matching
+feature reports itself as unconfigured, same rule as everywhere else.
+Nothing is stored in the file or in git. When asked for a plan, confirm
+**Free** is selected — `render.yaml` requests it, but Render's UI is the
+final word on what your workspace can actually create.
 
-**Health check and disk.** The UI declares `healthCheckPath: /`. The API
-does not — Render's Blueprint validator rejects a `healthCheckPath` on a
-`pserv` outright, confirmed against the actual dashboard error rather than
-assumed; a private service's health is just whether its port accepts a
-connection. `/health` is still there for anyone reaching it directly over
-the private network, just not wired in as a platform-level check. The API
-mounts a 1GB disk at the same path Fly's volume uses, so the SQLite cache
-tier works exactly as written.
+**What "free" costs in practice, from Render's own documented limits, not
+guessed:**
 
-**Cost.** Render's free tier covers a `web` service (with the trade-off
-that it spins down after 15 minutes idle) but not a `pserv` — a private
-service and its disk are billed regardless of traffic. Confirm the current
-`starter` plan price in the Render dashboard before deploying; this file
-states the mechanism, not a number that changes on Render's own schedule.
+- **Spins down after 15 minutes idle**, ~1 minute to spin back up on the
+  next request. Stacks on top of this app's own cold-fetch cost (see the
+  Measured table in the README) rather than replacing it — a visitor after
+  a long gap pays both.
+- **Filesystem is ephemeral** (true of every free web service, not
+  specific to this app): the SQLite cache tier still works exactly as
+  written for as long as the container stays up, and resets on every
+  spin-down, redeploy, or platform-initiated restart. No mounted disk is
+  possible on this plan.
+- **750 instance-hours per workspace per month.** A service that's spun
+  down consumes none of them; one left handling steady traffic can.
+- Render may restart a free instance at any time, for its own reasons —
+  build that into your expectations rather than treating an unexplained
+  restart as this app's bug.
+
+**If you outgrow this:** the two-service, private-API design is still the
+right one and isn't gone — it just needs Render's paid tier, or Fly (a
+persistent volume, no spin-down) or Cloud Run (scale-to-zero with a
+per-instance cache) instead. See their sections below.
 
 ## Google Cloud Run
 
