@@ -1,0 +1,80 @@
+# Fly.io deployment.
+#
+#   fly launch --no-deploy --copy-config
+#   fly secrets set GEMINI_API_KEY=... NEWS_API_KEY=... MARKETAUX_API_KEY=...
+#   fly volumes create marketpulse_cache --size 1
+#   fly deploy
+#
+# Two processes from one image, matching compose.yaml. The UI is the public
+# face; the API is reachable only over Fly's private network, so the paid
+# AI endpoints are not exposed to the internet at all.
+
+app = "marketpulse"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LOG_FORMAT = "json"
+  LOG_LEVEL = "INFO"
+  # Fly terminates TLS and sets X-Forwarded-For, so it can be trusted here.
+  # Without this the rate limiter would see every request as coming from the
+  # proxy and throttle all users as one.
+  MARKETPULSE_TRUST_PROXY = "1"
+  MARKETPULSE_API_URL = "http://marketpulse.internal:8000"
+
+[processes]
+  api = "uvicorn marketpulse.api.main:app --host 0.0.0.0 --port 8000"
+  ui = "streamlit run app.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false"
+
+# Public: the dashboard.
+[http_service]
+  internal_port = 8501
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["ui"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 60
+
+# Private: the API. No [http_service] block, so it is not routed from the
+# internet; the UI reaches it over .internal.
+[[services]]
+  internal_port = 8000
+  protocol = "tcp"
+  processes = ["api"]
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "3s"
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    method = "get"
+    path = "/health"
+
+# The SQLite cache tier. Without it every deploy sends the first visitor
+# back to the upstream APIs for the full cold fetch.
+[[mounts]]
+  source = "marketpulse_cache"
+  destination = "/home/marketpulse/.marketpulse"
+  processes = ["api"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  processes = ["api"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["ui"]
