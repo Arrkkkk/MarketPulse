@@ -9,6 +9,12 @@ the real client, and the real service — the whole Phase 3 split in one go.
 
 Set MARKETPULSE_API_URL to point at a service on another port.
 
+Since Phase 12, app.py is a router: st.navigation dispatches to a page
+script under marketpulse/ui/pages/, so most of this drives page switches
+rather than sidebar controls. AppTest.switch_page() takes a path relative
+to the entrypoint (repo root), matching what app.py itself passes to
+st.Page — same convention, same relative root.
+
 Adapted from JoshuaC215/agent-service-toolkit `scripts/e2e_ui_tests.py`.
 """
 
@@ -25,6 +31,10 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 
 # AppTest resolves relative paths against THIS file, not the cwd.
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
+
+STOCKS_PAGE = "marketpulse/ui/pages/stocks.py"
+CRYPTO_PAGE = "marketpulse/ui/pages/crypto.py"
+ANALYST_PAGE = "marketpulse/ui/pages/analyst.py"
 
 
 def run(label: str, fn) -> bool:
@@ -55,12 +65,13 @@ def main() -> int:
 
     first = AppTest.from_file(APP, default_timeout=120)
     first.run()
-    ok &= run("initial load", lambda: first)
+    ok &= run("initial load (Markets)", lambda: first)
 
     if first.exception:
         return 1
 
-    # The overview must have rendered real numbers, not an error state.
+    # The default page — Markets — must have rendered real numbers, not an
+    # error state.
     metrics = [m.label for m in first.metric]
     print(f"      {len(metrics)} metric tiles rendered")
     if not metrics:
@@ -76,19 +87,23 @@ def main() -> int:
                 break
         return at
 
-    ok &= run("click 'Show more'", lambda: click("show more"))
-    ok &= run("switch to Cryptocurrencies", lambda: _switch(initial()))
-    ok &= run("exact ticker", lambda: _search(initial(), "MSFT"))
-    ok &= run("company name search", lambda: _search(initial(), "reliance"))
-    ok &= run("query matching nothing", lambda: _search(initial(), "zzzznotacompany"))
-    ok &= run("query with punctuation", lambda: _search(initial(), "!!!!"))
+    ok &= run("click 'Show more' (Markets)", lambda: click("show more"))
+    ok &= run("navigate to Stocks", lambda: _goto(initial(), STOCKS_PAGE))
+    ok &= run("navigate to Crypto", lambda: _goto(initial(), CRYPTO_PAGE))
+    ok &= run("navigate to Analyst", lambda: _goto(initial(), ANALYST_PAGE))
+    ok &= run("exact ticker", lambda: _search(_goto(initial(), STOCKS_PAGE), "MSFT"))
+    ok &= run("company name search", lambda: _search(_goto(initial(), STOCKS_PAGE), "reliance"))
+    ok &= run(
+        "query matching nothing", lambda: _search(_goto(initial(), STOCKS_PAGE), "zzzznotacompany")
+    )
+    ok &= run("query with punctuation", lambda: _search(_goto(initial(), STOCKS_PAGE), "!!!!"))
 
     print("\n" + ("OK" if ok else "FAILED"))
     return 0 if ok else 1
 
 
-def _switch(at):
-    at.sidebar.radio[0].set_value("Cryptocurrencies").run()
+def _goto(at, page_path: str):
+    at.switch_page(page_path).run()
     return at
 
 
