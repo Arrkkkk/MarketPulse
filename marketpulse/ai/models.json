@@ -1,0 +1,75 @@
+{
+  "_comment": [
+    "Model catalog. One file, so the picker, the client and the cost table",
+    "cannot drift apart (pattern from virattt/ai-hedge-fund llm/registry.py).",
+    "",
+    "Entries here were VERIFIED by actually calling generateContent with a",
+    "response_schema, not by reading the model list. Being listed is not the",
+    "same as being usable: gemini-2.5-flash appears in models.list() for this",
+    "key and returns 404 NOT_FOUND when called.",
+    "",
+    "Pricing is deliberately null. Per-token rates for these models are not",
+    "something this catalog can verify, and a wrong rate is worse than no",
+    "rate: token counts come back exact from the API and are always reported,",
+    "while cost is reported only when someone fills in a rate they have",
+    "confirmed against https://ai.google.dev/pricing",
+    "",
+    "Re-verify with: uv run python scripts/check_models.py"
+  ],
+  "verified_on": "2026-09-15",
+  "pricing_verified_on": null,
+  "models": [
+    {
+      "id": "gemini-3.5-flash-lite",
+      "display_name": "Gemini 3.5 Flash Lite",
+      "provider": "google",
+      "default": true,
+      "supports_structured_output": true,
+      "supports_streaming": true,
+      "input_usd_per_mtok": null,
+      "output_usd_per_mtok": null,
+      "_note": "Fastest verified: 1.45s for a 2-article structured analysis."
+    },
+    {
+      "id": "gemini-3.6-flash",
+      "display_name": "Gemini 3.6 Flash",
+      "provider": "google",
+      "fallback": true,
+      "supports_structured_output": true,
+      "supports_streaming": true,
+      "input_usd_per_mtok": null,
+      "output_usd_per_mtok": null,
+      "_note": "Fallback: a different tier, so it is a different failure domain. 8.3s."
+    },
+    {
+      "id": "gemini-3.1-flash-lite",
+      "display_name": "Gemini 3.1 Flash Lite",
+      "provider": "google",
+      "supports_structured_output": true,
+      "supports_streaming": true,
+      "input_usd_per_mtok": null,
+      "output_usd_per_mtok": null,
+      "_note": "Verified, 2.1s."
+    },
+    {
+      "id": "gemini-3-flash-preview",
+      "display_name": "Gemini 3 Flash (preview)",
+      "provider": "google",
+      "supports_structured_output": true,
+      "supports_streaming": true,
+      "input_usd_per_mtok": null,
+      "output_usd_per_mtok": null,
+      "_note": "Verified, 5.5s."
+    },
+    {
+      "id": "gemini-flash-lite-latest",
+      "display_name": "Gemini Flash Lite (latest alias)",
+      "provider": "google",
+      "supports_structured_output": true,
+      "supports_streaming": true,
+      "input_usd_per_mtok": null,
+      "output_usd_per_mtok": null,
+      "_note": "Alias. Not the default: an alias moves under you, which is the opposite of reproducible."
+    }
+  ]
+}

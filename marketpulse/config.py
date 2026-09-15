@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     MARKETAUX_API_KEY: SecretStr | None = None
 
     # --- AI --------------------------------------------------------------
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    #: None means "whatever the model catalog marks as default". Pinning a
+    #: model here used to be the only way to change it, and the pinned value
+    #: (gemini-1.5-flash) outlived its own deprecation. Set this only to
+    #: override the catalog deliberately.
+    GEMINI_MODEL: str | None = None
 
     # --- data refresh ------------------------------------------------------
     DEFAULT_REFRESH_SECONDS: int = 60

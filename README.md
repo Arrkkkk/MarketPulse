@@ -1,67 +1,281 @@
-# Marketpulse
+# MarketPulse
 
-### A Real-time Stock and Crypto Market Dashboard
+[![CI](https://github.com/Arrkkkk/MarketPulse/actions/workflows/ci.yml/badge.svg)](https://github.com/Arrkkkk/MarketPulse/actions/workflows/ci.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+![Coverage 92%](https://img.shields.io/badge/coverage-92%25-brightgreen)
+![Tests 455](https://img.shields.io/badge/tests-455-brightgreen)
 
-This project is a powerful, interactive market tracker built using **Python** and **Streamlit**. It provides users with live data, historical analysis, and AI-driven insights for both stocks and cryptocurrencies, all within a clean and user-friendly web interface.
+Real-time stock and cryptocurrency dashboard with news aggregation and
+AI-generated sentiment analysis, built as a FastAPI service with a thin
+Streamlit client.
 
-### Key Features
+```
+                    ┌──────────────────────────────────────────┐
+   Browser ────────▶│  Streamlit UI       presentation only    │
+                    └──────────────────┬───────────────────────┘
+                                       │  MarketPulseClient
+                                       │  typed httpx · SSE
+                    ┌──────────────────▼───────────────────────┐
+                    │  FastAPI service                         │
+                    │   api/v1   routing · validation · errors │
+                    │   services orchestration                 │
+                    │   ai/      registry · prompts · analyst  │
+                    └──────────────────┬───────────────────────┘
+                                       │  Protocols
+                    ┌──────────────────▼───────────────────────┐
+                    │  providers   CachedX(X()) wrappers       │
+                    └──────────────────┬───────────────────────┘
+                                       │
+                    ┌──────────────────▼───────────────────────┐
+                    │  platform                                │
+                    │   retry · circuit breaker · rate limit   │
+                    │   memory→SQLite cache · LTTB · metrics   │
+                    └──────────────────┬───────────────────────┘
+                                       │
+                 Yahoo Finance · CoinGecko · NewsAPI · MarketAux · Gemini
+```
 
-* **Real-time Data:** Get up-to-the-minute prices for major stocks and cryptocurrencies.
-* **Historical Analysis:** View detailed historical price charts and trading volumes for any supported asset.
-* **Global Stock Search:** Search for any company from various global stock exchanges using ticker symbols.
-* **Intelligent News Aggregation:** Fetches relevant news articles from multiple APIs, prioritizing the most relevant source for the selected company's exchange.
-* **AI-Powered Insights:** Utilizes the Google Gemini API to provide a summary and analysis of news articles and answer general market questions.
-* **Dynamic UI:** The interface is responsive and allows you to easily switch between crypto and stock views.
+The dependency arrow points inward only, and three `import-linter` contracts
+check it on every push — so the layering cannot rot quietly.
 
-### Technologies Used
-
-* **Frontend:** Streamlit
-* **Backend:** Python
-* **Stock Data:** yfinance
-* **Crypto Data:** CoinGecko API
-* **News Sources:** NewsAPI.org & MarketAux API
-* **AI Model:** Google Gemini API
-* **Data Handling:** Pandas & Plotly
-
-### Getting Started
-
-To run this project on your local machine, follow these steps.
-
-#### 1. Clone the repository
+## Quick start
 
 ```bash
-git clone [https://github.com/Rohan-2604/Marketpulse.git](https://github.com/Rohan-2604/Marketpulse.git)
-cd Marketpulse
+uv sync
+cp .env.example .env          # optional: keys enable news and AI
 
-2. Set up the virtual environment
-Bash
+uv run uvicorn marketpulse.api.main:app --reload    # http://localhost:8000/docs
+uv run streamlit run app.py                         # http://localhost:8501
+```
 
-# For Windows
-python -m venv venv
-.\venv\Scripts\activate
+Or `docker compose up --build`. See [docs/deploying.md](docs/deploying.md).
 
-# For macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
-3. Install dependencies
-Install all required Python libraries using the requirements.txt file.
+Every credential is optional and each gates one feature. With none set the
+price dashboard works fully; news and AI report themselves as unconfigured
+rather than failing quietly.
 
-Bash
+## The idea it is built around
 
-pip install -r requirements.txt
-4. Configure API Keys
-This project relies on several external APIs. You must set your API keys as system environment variables.
+**Empty is not the same as failed.**
 
-NEWS_API_KEY: Get a key from NewsAPI.org.
+Every data function in the original version ended `except Exception: return {}`,
+so a rate-limit error and a company with no coverage produced the same
+value — and the UI told users "No recent news found" whenever we were
+throttled. A false statement, presented as fact.
 
-MARKETAUX_API_KEY: Get a key from MarketAux.com.
+Now providers raise a typed error (`RateLimited`, `SymbolNotFound`,
+`ProviderUnavailable`, `ProviderNotConfigured`) and return empty only when
+the data genuinely is. The API maps those onto 429/404/502/503 with a stable
+`error` code, and the UI says something true for each. A shared contract
+test asserts it for every provider, including the inverse: a healthy
+response with no results must *return* empty, not raise.
 
-GEMINI_API_KEY: Get a key from Google AI Studio.
+That one rule shapes most of the rest — [ADR 1](docs/adr/0001-fail-loud-provider-contract.md).
 
-5. Run the application
-Once your environment is set up and API keys are configured, run the Streamlit application from your terminal.
+## What else is worth knowing
 
-Bash
+**Caching decorates the interface** rather than living inside each provider:
+`CachedPriceProvider(YFinanceProvider())`. Memory → SQLite, version-prefixed
+keys, TTLs per data class. Only successes are cached — a brief outage must
+not become a twelve-hour one.
 
-streamlit run app.py
-This will launch the web application in your default browser.
+**One resilience layer** wraps every outbound call: jittered backoff, a
+circuit breaker whose half-open state admits exactly one probe, and a token
+bucket sized to each free tier.
+
+**AI output is a schema, not prose.** The model must return a sentiment
+enum, a bounded confidence, themes and risk flags, so sentiment is chartable
+data and the feature is testable — you assert the contract, never the
+wording. Invalid output is re-asked once with the validation error attached;
+an unavailable model falls back to a different one.
+
+**News content is treated as hostile.** Article text is attacker-controlled;
+it is escaped and delimited, instructions come after the data, and the
+schema bounds what a successful injection could achieve.
+
+**Currency comes from the ticker suffix.** The batch price download carries
+no currency, and fetching 29 profiles to read one field each is what made
+the original cold start 45 seconds. An unknown venue renders no label rather
+than a wrong one.
+
+**Search by name.** The original required you to know that Reliance is
+`RELIANCE.NS`. Typing `hsbc` now returns HSBC (USD), 0005.HK (HKD) and
+HSBA.L (GBP).
+
+**Overview tiles carry a 30-day sparkline**, for stocks only — the year of
+daily bars it's sliced from is already in memory building the
+day-over-day delta, so it costs one `pandas.tail()` per symbol, not a
+fetch. Crypto doesn't get one: the overview only ever fetches current
+crypto quotes, never histories, and adding one would mean a new per-coin
+upstream call, not a free byproduct of what's already there —
+[ADR 11](docs/adr/0011-sparkline-payload.md).
+
+## Measured
+
+Against the pre-refactor baseline, same machine and network. Re-measure with
+`scripts/smoke_live.py` and `GET /metrics`.
+
+| | Before | After | |
+|---|---:|---:|---|
+| Cold start, 29-symbol overview | 45.5s | **1.9s** | 24× |
+| Warm overview, in process | — | 0.03–0.07s | |
+| Warm overview, new process | — | 0.04–0.07s | what a second visitor pays |
+| `GET /v1/overview` p95 | — | **19ms** | |
+| `IBM period=max` on the wire | ~1.4MB | **38KB** | 37×, gzipped, shape intact |
+| `/v1/overview`, gzipped, with sparklines | 2.3KB | **6.8KB** | +4.5KB for a trend line on 29 tiles — [ADR 11](docs/adr/0011-sparkline-payload.md) |
+| Symbols resolving | 27/29 | **29/29** | two were delisted |
+| Cached AI analysis | — | 2.5ms | vs 2.6s cold |
+| Cache hit rate, browsing session | — | 95% | |
+| Tests | 0 | **455** | 92% covered, no network |
+
+The 45.5s figure decomposed as 21s of `.info` calls, 14.6s of hardcoded
+`sleep(0.5)`, and 9.9s of actual fetching, one symbol at a time.
+
+Cold start varies with Yahoo Finance's own response time on the day —
+three fresh runs while re-measuring this table came back 1.7s, 1.9s and
+2.8s, all against the same 29 symbols. The multiplier moves with it; the
+architecture doesn't. `GET /v1/overview` p95 and the wire-size rows come
+from the HTTP layer instead, and hold steady across runs the cold-start
+number doesn't.
+
+## Verified against the live API
+
+`scripts/check_models.py` calls every catalog model with a real
+`response_schema`, because listing is not enough — `gemini-2.5-flash`
+appears in `models.list()` and returns 404 when invoked.
+
+`scripts/eval_injection.py` is the behavioural half of the injection
+defence, which unit tests structurally cannot cover. Six attacks — direct
+override, forged system turn, fake regulatory authority, role reassignment,
+a delimiter flood and a base64-encoded instruction — appended to
+unambiguously bearish articles. All six failed to move the verdict, and all
+six were reported in `risk_flags`.
+
+## Observability
+
+`LOG_FORMAT=json` emits one object per line carrying `ts`, `level`,
+`logger`, `message`, `request_id` and any `extra=` fields.
+
+Every request gets an `X-Request-ID`. The ContextVar holding it lives in
+`platform/telemetry.py` rather than in the middleware that sets it, so any
+layer can stamp a line without importing the API package — which is what
+makes a request traceable from the router down through a provider or model
+call.
+
+`GET /metrics` reports latency percentiles per route template, cache hit
+rate, breaker states, per-provider error rates and AI token totals.
+Provider error rate measures whether the provider is *working*, not whether
+data exists: a 404 for a nonexistent ticker is a successful call that
+returned nothing.
+
+## Security
+
+| | |
+|---|---|
+| Credentials | `SecretStr`, never logged — asserted with a sentinel key hunted through reprs, logs, tracebacks, error bodies and every metadata endpoint |
+| Rate limiting | Per-client token buckets, two tiers. AI endpoints 0.2/s (burst 10) because they cost money; everything else 10/s (burst 60). `/health` exempt |
+| Input | Symbol allowlist regex before anything reaches yfinance or a prompt; question length capped at the edge |
+| Prompt injection | Escaped, delimited, instructions-after-data, plus the live eval above |
+| CORS | Explicit origin allowlist, never `*` |
+| Headers | nosniff, DENY framing, no-referrer, restrictive CSP and Permissions-Policy. HSTS left to the TLS terminator |
+| Errors | One envelope; `detail` only under DEBUG, so production leaks nothing |
+| Dependencies | `pip-audit` on every push, Dependabot weekly |
+
+`X-Forwarded-For` is honoured only under `MARKETPULSE_TRUST_PROXY=1` — the
+header is forgeable without a proxy in front, and a test asserts a spray of
+forged addresses still hits the limit.
+
+## Accessibility
+
+Checked against a live rendered page, not asserted from the token values —
+the same discipline as the numbers above.
+
+| | |
+|---|---|
+| Contrast | Every text/background pairing in both themes computed against WCAG's relative-luminance formula: body text 15.6–17.9:1, the accent 6.7–7.3:1, price up/down 5.6–8.4:1 — all comfortably over the 4.5:1 floor for normal text |
+| Colour independence | Price direction always carries a glyph (▲/▼) and a signed number, never colour alone — the app's one hard rule, since red/green is the worst-case pairing for the most common colour-vision deficiency |
+| Alert severity | `st.info`/`warning`/`error` render with no icon at all by default in this Streamlit version — confirmed by inspecting a live render, not assumed — so every one now carries an explicit Material icon; the three states read apart by shape, not only by the tint of the band behind them |
+| Keyboard | Every interactive element reachable by Tab carries a visible 2px focus ring, verified by scripting real Tab key-presses against a live page. One real gap found this way: Streamlit's own "link to this heading" anchors set `outline: none` on focus, leaving a keyboard-reachable link with no visible indicator — fixed with a scoped override |
+| Reduced motion | Every automatic animation (price flash, tile entrance, skeleton shimmer) disables under `prefers-reduced-motion`, with the information it carried kept — a flash's rail stays, a skeleton's shape stays |
+| Responsive | `initial_sidebar_state="auto"` rather than a forced-open sidebar, which ate roughly half a 390px viewport in the redesign's first pass; snapshot tiles carry a `min-width` so flexbox wraps them to fewer per row as the viewport narrows — confirmed at 390px (1 column), 810px (2) and 1440px (4). Streamlit's Python side has no viewport-width signal at all (`st.context` carries no size), so this is a CSS floor, not a server-side breakpoint |
+| Screen reader text | Sparklines carry `role="img"` and a stated-in-words `aria-label` ("30-day trend: rose from 303.16 to 333.08, +9.9%"); charts keep a disclosed data table alongside the canvas |
+
+**Known limit:** a fragment refresh replaces the Markets page's tiles with no
+screen-reader announcement of what changed. An `aria-live` region was
+considered and rejected for now — on a 60-second timer it would announce
+itself every minute regardless of whether anything moved, which trades a
+real gap for a worse one.
+
+## Layout
+
+```
+marketpulse/
+├── platform/     resilience, tiered cache, LTTB, logging, metrics
+├── schema/       domain + wire models, exchange reference data
+├── providers/    Protocols, typed errors, 4 providers, caching wrappers
+├── services/     market orchestration, news routing
+├── ai/           model registry, hardened prompts, structured analysis
+├── api/          FastAPI app, DI, error envelope, middleware, v1 routers
+├── client/       typed httpx client — the UI's only backend import
+└── ui/           Streamlit presentation
+```
+
+## API
+
+`GET /health` · `/health/ready` · `/info` · `/metrics`
+`GET /v1/overview` · `/v1/search?q=` · `/v1/history/{symbol}` · `/v1/profile/{symbol}` · `/v1/crypto/history/{coin_id}`
+`GET /v1/news/{symbol}` · `/v1/news?q=`
+`GET /v1/analysis/{symbol}` · `/v1/analysis/{symbol}/stream` (SSE) · `POST /v1/insights` (SSE)
+
+Interactive docs at `/docs`.
+
+## Development
+
+```bash
+uv run pytest                      # 455 tests, ~12s, no network
+uv run pytest --cov                # 92%, excluding the UI
+uv run ruff check marketpulse
+uv run mypy                        # clean
+uv run lint-imports                # 3 architecture contracts
+uv run pre-commit install          # the fast half of CI, before each commit
+
+uv run python scripts/smoke_live.py      # real upstreams
+uv run python scripts/smoke_ui.py        # drives the UI via AppTest
+uv run python scripts/check_models.py    # probes the model catalog (needs a key)
+uv run python scripts/eval_injection.py  # live injection eval (needs a key)
+```
+
+CI runs lint, formatting, mypy, the architecture contracts, tests with a
+coverage gate and `pip-audit`, on 3.11 and 3.12 — plus two jobs with
+specific histories behind them: one installs `requirements.txt` with plain
+pip and rejects NUL bytes, and one builds the Docker image, starts it and
+asserts the container is not root.
+
+Coverage is gated at 88% over the surface pytest can exercise.
+`marketpulse/ui` is excluded — Streamlit call sequences need a script
+context, so a gate including them would measure the wrong thing. The UI is
+covered by `scripts/smoke_ui.py` through Streamlit's own AppTest harness.
+
+## Decisions
+
+[docs/adr/](docs/adr/) records eleven, including the ones this project does
+*not* do:
+
+- [No RAG](docs/adr/0003-no-rag.md) — five articles fit in the prompt; retrieval over a set small enough to pass whole costs latency and infrastructure for nothing
+- [No LiteLLM](docs/adr/0004-no-litellm.md) — its value scales with provider count, and this has one
+- [Synchronous platform layer](docs/adr/0005-synchronous-platform-layer.md) — every upstream client blocks, and wrapping blocking calls in `async` moves the blocking into the event loop
+- [In-process rate limiting](docs/adr/0009-in-process-rate-limiting.md) — with a stated limit: it does not survive horizontal scaling
+- [Null model pricing](docs/adr/0010-null-model-pricing.md) — a wrong cost figure is worse than an absent one
+
+## Known limits
+
+- **Rate limiting is per-process.** N replicas means N times the intended limit; a shared Redis bucket is needed before scaling out.
+- **Per-token pricing is unset**, so cost reports as unavailable rather than estimated. Token counts are exact.
+- **No persistence beyond the cache.** Sentiment history and watchlists would need a real database.
+- **The Docker build is verified in CI, not locally** — Docker is not installed on the machine this was developed on. The CI job builds the image, starts it, waits for `/health` and asserts the container is not root.
+
+## Built with
+
+Python 3.11+ · FastAPI · Streamlit · Pydantic · httpx · pandas · Plotly ·
+yfinance · CoinGecko · NewsAPI · MarketAux · Google Gemini · uv · pytest ·
+ruff · mypy · import-linter · Docker

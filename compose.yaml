@@ -1,0 +1,56 @@
+# Two processes from one image: the service and the UI that consumes it.
+#
+#   docker compose up --build
+#
+#   UI    http://localhost:8501
+#   API   http://localhost:8000/docs
+
+services:
+  api:
+    build: .
+    image: marketpulse:local
+    ports:
+      - "8000:8000"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Absent keys disable the matching feature; they do not stop startup.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      NEWS_API_KEY: ${NEWS_API_KEY:-}
+      MARKETAUX_API_KEY: ${MARKETAUX_API_KEY:-}
+    volumes:
+      # Persist the SQLite cache tier across restarts, so a redeploy does not
+      # send every visitor back to the upstream APIs.
+      - cache:/home/marketpulse/.marketpulse
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  ui:
+    build: .
+    image: marketpulse:local
+    command:
+      - streamlit
+      - run
+      - app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.headless=true
+      - --browser.gatherUsageStats=false
+    ports:
+      - "8501:8501"
+    environment:
+      MARKETPULSE_API_URL: http://api:8000
+    depends_on:
+      api:
+        # Wait for readiness, not just for the container to exist — otherwise
+        # the first page load races the service and shows a connection error.
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  cache:

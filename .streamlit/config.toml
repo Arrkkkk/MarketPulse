@@ -1,0 +1,97 @@
+# MarketPulse design tokens.
+#
+# This is the identity, declared where Streamlit can own it rather than in
+# CSS fighting internal class names that change between minor versions —
+# the same reason this project keeps three import-linter contracts instead
+# of policing layering by convention.
+#
+# Direction: "instrument, not dashboard." Red and green mean exactly one
+# thing anywhere in this app — price direction — so the brand accent lives
+# outside that hue range on purpose. See docs/adr/ for the reasoning this
+# project expects of a decision; a token-system ADR belongs there before
+# these values are next revisited.
+
+[server]
+# Self-hosted fonts and the one small stylesheet in static/ — see
+# marketpulse/ui/theme.py for what loads them. No CDN request, matching the
+# CSP this project already ships (marketpulse/api/middlewares/security_headers.py).
+enableStaticServing = true
+
+[theme]
+base = "light"
+
+font = "Instrument Sans"
+headingFont = "Instrument Sans"
+codeFont = "IBM Plex Mono"
+
+# Near-square corners: an instrument has machined edges, not pillowed ones.
+baseRadius = "3px"
+buttonRadius = "3px"
+
+# Inputs read as inputs instead of floating untethered.
+showWidgetBorder = true
+
+[[theme.fontFaces]]
+family = "Instrument Sans"
+url = "app/static/fonts/instrument-sans.woff2"
+weight = "400 600"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "IBM Plex Mono"
+url = "app/static/fonts/ibm-plex-mono-400.woff2"
+weight = "400"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "IBM Plex Mono"
+url = "app/static/fonts/ibm-plex-mono-500.woff2"
+weight = "500"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "IBM Plex Mono"
+url = "app/static/fonts/ibm-plex-mono-600.woff2"
+weight = "600"
+style = "normal"
+
+# --- light -------------------------------------------------------------
+# Default on open (per product decision — dark stays one click away in
+# Settings ▸ App theme, which Streamlit provides for free once both
+# variants below are defined).
+[theme.light]
+primaryColor = "#0E5F73"          # accent — deliberately outside red/green
+backgroundColor = "#F4F6F7"       # ground — a faint cool bias, not plain grey
+secondaryBackgroundColor = "#E9EDEF"  # sidebar, inputs, code: recessed chrome
+textColor = "#12181C"
+linkColor = "#0E5F73"
+borderColor = "#DBE2E5"
+dataframeBorderColor = "#DBE2E5"
+codeBackgroundColor = "#E9EDEF"
+codeTextColor = "#0A4756"
+# Streamlit's own success/error semantics adopt the same up/down pair the
+# rest of the app uses for price direction, so "red" and "green" mean one
+# thing everywhere rather than two slightly different reds.
+greenColor = "#0D7049"
+redColor = "#A8281F"
+# Caution: degraded data, rate limits, stale cache — see state.py.
+orangeColor = "#8A5A00"
+
+# --- dark ----------------------------------------------------------------
+# Equal citizen, not an inversion: contrast and the accent were re-checked
+# against this ground, not auto-flipped from light.
+[theme.dark]
+primaryColor = "#4BADC4"
+backgroundColor = "#0D1114"
+# Lighter than the page, not darker: a dark instrument's chrome sits above
+# the page, where a light one's sits recessed below it.
+secondaryBackgroundColor = "#151B1F"
+textColor = "#E4EAED"
+linkColor = "#7FCADC"
+borderColor = "#232C32"
+dataframeBorderColor = "#232C32"
+codeBackgroundColor = "#0A0E10"
+codeTextColor = "#7FCADC"
+greenColor = "#35B37E"
+redColor = "#E5695C"
+orangeColor = "#D6A44A"
