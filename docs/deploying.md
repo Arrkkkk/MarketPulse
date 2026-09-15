@@ -49,10 +49,14 @@ exists — so `MarketPulseClient` now adds `http://` itself when the base
 URL doesn't already have one. A no-op for every other deployment shape,
 which all already supply a full URL.
 
-**Health checks and disk.** Both services declare `healthCheckPath`
-against the endpoints this project already exposes (`/health` for the
-API); the API mounts a 1GB disk at the same path Fly's volume uses, so the
-SQLite cache tier works exactly as written.
+**Health check and disk.** The UI declares `healthCheckPath: /`. The API
+does not — Render's Blueprint validator rejects a `healthCheckPath` on a
+`pserv` outright, confirmed against the actual dashboard error rather than
+assumed; a private service's health is just whether its port accepts a
+connection. `/health` is still there for anyone reaching it directly over
+the private network, just not wired in as a platform-level check. The API
+mounts a 1GB disk at the same path Fly's volume uses, so the SQLite cache
+tier works exactly as written.
 
 **Cost.** Render's free tier covers a `web` service (with the trade-off
 that it spins down after 15 minutes idle) but not a `pserv` — a private
