@@ -143,9 +143,11 @@ class FakeNewsProvider:
         fail_with: Exception | None = None,
     ) -> None:
         self.name = name
-        self._articles = articles if articles is not None else [
-            NewsArticle(title="Headline", url="https://example.com/1", source_name=name)
-        ]
+        self._articles = (
+            articles
+            if articles is not None
+            else [NewsArticle(title="Headline", url="https://example.com/1", source_name=name)]
+        )
         self._configured = configured
         self.fail_with = fail_with
         self.call_count = 0

@@ -43,7 +43,9 @@ class NewsService:
 
     @staticmethod
     def is_us_listed(exchange: str | None) -> bool:
-        return bool(exchange) and exchange.strip().upper() in US_EXCHANGES
+        if not exchange:
+            return False
+        return exchange.strip().upper() in US_EXCHANGES
 
     def get_news(
         self,
@@ -94,17 +96,14 @@ class NewsService:
         if errors:
             # Every provider that could have answered, failed. Say so rather
             # than returning an empty list the UI would render as "no news".
-            raise ProviderUnavailable(
-                "; ".join(str(e) for e in errors), provider="news"
-            )
+            raise ProviderUnavailable("; ".join(str(e) for e in errors), provider="news")
 
         if not attempted:
             # No key for either provider, so we never looked. Returning an
             # empty list here would render as "no news found for AAPL" —
             # the same lie, one level up, that this service exists to stop.
             raise ProviderNotConfigured(
-                "no news provider is configured (set NEWS_API_KEY and/or "
-                "MARKETAUX_API_KEY)",
+                "no news provider is configured (set NEWS_API_KEY and/or MARKETAUX_API_KEY)",
                 provider="news",
             )
 

@@ -43,9 +43,7 @@ class MarketAuxProvider:
         api_key: str | None = None,
     ) -> None:
         self._get = get_fn or requests.get
-        self._api_key = (
-            api_key if api_key is not None else secret(get_settings().MARKETAUX_API_KEY)
-        )
+        self._api_key = api_key if api_key is not None else secret(get_settings().MARKETAUX_API_KEY)
         self._limiter = get_limiter("marketaux", _RATE_PER_SECOND, burst=3)
 
     @property

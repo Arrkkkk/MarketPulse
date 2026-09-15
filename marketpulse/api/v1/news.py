@@ -31,7 +31,7 @@ def get_news_for_symbol(
     searching by symbol rather than failing.
     """
     profile = market.get_profile(symbol)
-    query = (profile.long_name if profile and profile.long_name else symbol)
+    query = profile.long_name if profile and profile.long_name else symbol
     exchange = profile.exchange if profile else None
 
     result = news.get_news(query, exchange=exchange, symbol=symbol, limit=limit)

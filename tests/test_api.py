@@ -127,7 +127,7 @@ def test_history_returns_bars(client):
 def test_history_downsamples_and_reports_the_original_size():
     price = FakePriceProvider(histories={"AAPL": make_history("AAPL", rows=500)})
     body = build_client(price=price).get("/v1/history/AAPL?max_points=50").json()
-    assert body["count"] <= 51          # +1 for the always-retained last bar
+    assert body["count"] <= 51  # +1 for the always-retained last bar
     assert body["total"] == 500
     assert body["count"] < body["total"]
 
@@ -276,7 +276,7 @@ def test_no_news_returns_200_with_an_empty_list():
 
 
 def test_news_without_any_configured_provider_is_503_not_empty():
-    """"No API key" must not render as "no news exists for this company"."""
+    """ "No API key" must not render as "no news exists for this company"."""
     us = FakeNewsProvider("NewsAPI", configured=False)
     glob = FakeNewsProvider("MarketAux", configured=False)
     r = build_client(news_us=us, news_global=glob).get("/v1/news?q=apple")
@@ -300,8 +300,7 @@ def test_analysis_returns_the_structured_result(cache):
     from marketpulse.ai.analyst import NewsAnalyst
     from tests.test_ai import FakeResponse, good_analysis, make_client
 
-    analyst = NewsAnalyst(client=make_client([FakeResponse(parsed=good_analysis())]),
-                          cache=cache)
+    analyst = NewsAnalyst(client=make_client([FakeResponse(parsed=good_analysis())]), cache=cache)
     r = _analyst_client(analyst).get("/v1/analysis/AAPL")
     assert r.status_code == 200
     body = r.json()
@@ -354,8 +353,7 @@ def test_analysis_rejects_a_malformed_symbol(cache):
     from marketpulse.ai.analyst import NewsAnalyst
     from tests.test_ai import FakeResponse, good_analysis, make_client
 
-    analyst = NewsAnalyst(client=make_client([FakeResponse(parsed=good_analysis())]),
-                          cache=cache)
+    analyst = NewsAnalyst(client=make_client([FakeResponse(parsed=good_analysis())]), cache=cache)
     assert _analyst_client(analyst).get("/v1/analysis/<script>").status_code in (404, 422)
 
 
@@ -478,9 +476,7 @@ def test_search_rejects_an_overlong_query(client):
 
 
 def test_search_respects_the_limit():
-    price = FakePriceProvider(
-        histories={f"AA{i}": make_history(f"AA{i}") for i in range(20)}
-    )
+    price = FakePriceProvider(histories={f"AA{i}": make_history(f"AA{i}") for i in range(20)})
     body = build_client(price=price).get("/v1/search?q=AA&limit=3").json()
     assert len(body["matches"]) == 3
 

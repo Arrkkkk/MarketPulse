@@ -45,9 +45,11 @@ def main() -> int:
     t0 = time.perf_counter()
     overview = service.get_overview()
     cold = time.perf_counter() - t0
-    print(f"cold overview      {cold:6.2f}s  "
-          f"stocks={len(overview.stocks)}/{len(service.stock_symbols)} "
-          f"crypto={len(overview.crypto)}/{len(service.crypto_ids)}")
+    print(
+        f"cold overview      {cold:6.2f}s  "
+        f"stocks={len(overview.stocks)}/{len(service.stock_symbols)} "
+        f"crypto={len(overview.crypto)}/{len(service.crypto_ids)}"
+    )
     if overview.degraded:
         print(f"  degraded: {overview.failures}")
     if not overview.stocks or not overview.crypto:
@@ -56,15 +58,19 @@ def main() -> int:
     t0 = time.perf_counter()
     warm = service.get_overview()
     warm_s = time.perf_counter() - t0
-    print(f"warm overview      {warm_s:6.3f}s  all cached="
-          f"{all(h.cached for h in warm.stocks.values())}")
+    print(
+        f"warm overview      {warm_s:6.3f}s  all cached="
+        f"{all(h.cached for h in warm.stocks.values())}"
+    )
     if warm_s > cold:
         failures.append("the warm path was not faster than the cold path")
 
     t0 = time.perf_counter()
     profile = service.get_profile("AAPL")
-    print(f"lazy profile       {time.perf_counter() - t0:6.2f}s  "
-          f"{profile.long_name if profile else 'MISSING'}")
+    print(
+        f"lazy profile       {time.perf_counter() - t0:6.2f}s  "
+        f"{profile.long_name if profile else 'MISSING'}"
+    )
 
     # The contract: a nonexistent symbol raises rather than answering empty.
     try:
@@ -76,8 +82,10 @@ def main() -> int:
         print(f"fail-loud contract   ok  {type(exc).__name__} raised")
 
     print(f"\ncache {cache.stats()}")
-    print(f"vs {BASELINE_SECONDS}s baseline: {BASELINE_SECONDS / max(cold, 0.01):.1f}x cold, "
-          f"{BASELINE_SECONDS / max(warm_s, 0.001):.0f}x warm")
+    print(
+        f"vs {BASELINE_SECONDS}s baseline: {BASELINE_SECONDS / max(cold, 0.01):.1f}x cold, "
+        f"{BASELINE_SECONDS / max(warm_s, 0.001):.0f}x warm"
+    )
 
     if failures:
         print("\nFAILED:")

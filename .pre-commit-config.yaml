@@ -1,0 +1,54 @@
+# The fast half of CI, run before the commit rather than after it.
+#
+#   uv run pre-commit install
+#
+# Tests are deliberately not here: 5s is too slow for every commit, and CI
+# runs them. These hooks are the ones that catch a mistake in under a second.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: detect-private-key
+      # The requirements.txt encoding bug shipped and survived three
+      # commits. A UTF-16 file is full of NUL bytes, and this hook rejects
+      # them before they can be committed again.
+      - id: check-byte-order-marker
+      - id: forbid-submodules
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: no-nul-bytes
+        name: packaging files are UTF-8 (no NUL bytes)
+        entry: python scripts/check_encoding.py
+        language: system
+        files: ^(requirements\.txt|pyproject\.toml)$
+        pass_filenames: true
+
+      - id: import-contracts
+        name: architecture layering contracts
+        entry: uv run lint-imports
+        language: system
+        pass_filenames: false
+        files: ^marketpulse/.*\.py$
+
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        files: ^marketpulse/.*\.py$

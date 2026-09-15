@@ -87,10 +87,11 @@ class GeminiClient:
         The old code called `genai.configure()` at module import, so the
         whole app carried a side effect of merely importing api_utils.
         """
-        if not self.configured:
+        api_key = self._api_key
+        if not api_key:
             raise AINotConfigured("GEMINI_API_KEY is not set")
         if self._client is None:
-            self._client = self._factory(self._api_key)
+            self._client = self._factory(api_key)
         return self._client
 
     # -- generation --------------------------------------------------------
@@ -117,11 +118,13 @@ class GeminiClient:
             )
 
         response = self._guarded(_call, model)
+        prompt_tokens, output_tokens = _token_counts(response)
         return Completion(
             text=getattr(response, "text", "") or "",
             parsed=getattr(response, "parsed", None),
+            prompt_tokens=prompt_tokens,
+            output_tokens=output_tokens,
             model=model.id,
-            **_token_counts(response),
         )
 
     def generate_text(self, prompt: str, model: ModelSpec) -> Completion:
@@ -131,10 +134,12 @@ class GeminiClient:
             return client.models.generate_content(model=model.id, contents=prompt)
 
         response = self._guarded(_call, model)
+        prompt_tokens, output_tokens = _token_counts(response)
         return Completion(
             text=getattr(response, "text", "") or "",
+            prompt_tokens=prompt_tokens,
+            output_tokens=output_tokens,
             model=model.id,
-            **_token_counts(response),
         )
 
     def stream_text(self, prompt: str, model: ModelSpec) -> Iterator[str]:
@@ -147,9 +152,7 @@ class GeminiClient:
         client = self._sdk()
         self._limiter.acquire()
         try:
-            for chunk in client.models.generate_content_stream(
-                model=model.id, contents=prompt
-            ):
+            for chunk in client.models.generate_content_stream(model=model.id, contents=prompt):
                 text = getattr(chunk, "text", None)
                 if text:
                     yield text
@@ -174,18 +177,21 @@ class GeminiClient:
             raise
         except Exception as exc:  # noqa: BLE001
             raise classify(exc, model=model.id) from exc
-        logger.info(
-            "%s responded in %dms", model.id, int((time.perf_counter() - started) * 1000)
-        )
+        logger.info("%s responded in %dms", model.id, int((time.perf_counter() - started) * 1000))
         return response
 
 
-def _token_counts(response: Any) -> dict[str, int | None]:
-    """Pull usage off a response, tolerating a metadata shape that moves."""
+def _token_counts(response: Any) -> tuple[int | None, int | None]:
+    """(prompt, output) token counts, tolerating a metadata shape that moves.
+
+    A tuple rather than a dict splatted into the constructor: the splat hid
+    which keyword each value was landing on, and a rename upstream would have
+    silently bound them to the wrong parameters.
+    """
     usage = getattr(response, "usage_metadata", None)
     if usage is None:
-        return {"prompt_tokens": None, "output_tokens": None}
-    return {
-        "prompt_tokens": getattr(usage, "prompt_token_count", None),
-        "output_tokens": getattr(usage, "candidates_token_count", None),
-    }
+        return None, None
+    return (
+        getattr(usage, "prompt_token_count", None),
+        getattr(usage, "candidates_token_count", None),
+    )

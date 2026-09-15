@@ -74,7 +74,8 @@ def provider_error_response(exc: ProviderError | CircuitOpenError) -> JSONRespon
     """Translate one domain error into its HTTP form."""
     if isinstance(exc, SymbolNotFound):
         return error_response(
-            404, "symbol_not_found",
+            404,
+            "symbol_not_found",
             "That symbol could not be found, or has no data for the requested range.",
             detail=str(exc),
         )
@@ -83,19 +84,23 @@ def provider_error_response(exc: ProviderError | CircuitOpenError) -> JSONRespon
         if exc.retry_after:
             headers["Retry-After"] = str(int(exc.retry_after))
         return error_response(
-            429, "rate_limited",
+            429,
+            "rate_limited",
             "The upstream data provider is rate-limiting us. Try again shortly.",
-            detail=str(exc), headers=headers or None,
+            detail=str(exc),
+            headers=headers or None,
         )
     if isinstance(exc, ProviderNotConfigured):
         return error_response(
-            503, "provider_not_configured",
+            503,
+            "provider_not_configured",
             "This feature needs an API key that is not configured on the server.",
             detail=str(exc),
         )
     if isinstance(exc, CircuitOpenError):
         return error_response(
-            503, "provider_circuit_open",
+            503,
+            "provider_circuit_open",
             "That data provider is failing, so requests to it are paused. "
             "Service will resume automatically.",
             detail=str(exc),
@@ -103,7 +108,8 @@ def provider_error_response(exc: ProviderError | CircuitOpenError) -> JSONRespon
         )
     if isinstance(exc, ProviderUnavailable):
         return error_response(
-            502, "provider_unavailable",
+            502,
+            "provider_unavailable",
             "The upstream data provider could not be reached.",
             detail=str(exc),
         )
@@ -116,32 +122,38 @@ def ai_error_response(exc: AIError) -> JSONResponse:
     """Translate an AI failure into its HTTP form."""
     if isinstance(exc, AINotConfigured):
         return error_response(
-            503, "ai_not_configured",
+            503,
+            "ai_not_configured",
             "AI analysis needs a GEMINI_API_KEY that is not configured on the server.",
             detail=str(exc),
         )
     if isinstance(exc, AIRateLimited):
         headers = {"Retry-After": str(int(exc.retry_after))} if exc.retry_after else None
         return error_response(
-            429, "ai_rate_limited",
+            429,
+            "ai_rate_limited",
             "The AI provider is rate-limiting us. Try again shortly.",
-            detail=str(exc), headers=headers,
+            detail=str(exc),
+            headers=headers,
         )
     if isinstance(exc, AIContextTooLong):
         return error_response(
-            413, "ai_context_too_long",
+            413,
+            "ai_context_too_long",
             "There was too much text to analyse. Try fewer articles.",
             detail=str(exc),
         )
     if isinstance(exc, AIContentFiltered):
         return error_response(
-            422, "ai_content_filtered",
+            422,
+            "ai_content_filtered",
             "The model declined to analyse this content.",
             detail=str(exc),
         )
     if isinstance(exc, AIInvalidOutput):
         return error_response(
-            502, "ai_invalid_output",
+            502,
+            "ai_invalid_output",
             "The model did not return a usable analysis.",
             detail=str(exc),
         )

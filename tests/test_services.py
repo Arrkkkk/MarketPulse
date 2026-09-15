@@ -127,8 +127,9 @@ def test_not_configured_error_is_collected_and_surfaced():
 
 def test_overview_fetches_stocks_and_crypto():
     prices = FakePriceProvider(histories={"AAPL": make_history("AAPL")})
-    service = MarketService(prices, FakeCryptoProvider(), stock_symbols=("AAPL",),
-                            crypto_ids=("bitcoin",))
+    service = MarketService(
+        prices, FakeCryptoProvider(), stock_symbols=("AAPL",), crypto_ids=("bitcoin",)
+    )
     overview = service.get_overview()
     assert "AAPL" in overview.stocks
     assert "bitcoin" in overview.crypto
@@ -137,11 +138,10 @@ def test_overview_fetches_stocks_and_crypto():
 
 def test_overview_uses_one_batched_call_not_one_per_symbol():
     """The 45.5s -> 1.4s change. A regression here is a 30x slowdown."""
-    prices = FakePriceProvider(
-        histories={s: make_history(s) for s in ("AAPL", "MSFT", "GOOGL")}
+    prices = FakePriceProvider(histories={s: make_history(s) for s in ("AAPL", "MSFT", "GOOGL")})
+    service = MarketService(
+        prices, FakeCryptoProvider(), stock_symbols=("AAPL", "MSFT", "GOOGL"), crypto_ids=()
     )
-    service = MarketService(prices, FakeCryptoProvider(),
-                            stock_symbols=("AAPL", "MSFT", "GOOGL"), crypto_ids=())
     service.get_overview()
     batched = [c for c in prices.calls if c[0] == "get_histories"]
     per_symbol = [c for c in prices.calls if c[0] == "get_history"]
@@ -152,16 +152,18 @@ def test_overview_uses_one_batched_call_not_one_per_symbol():
 def test_overview_does_not_fetch_profiles_eagerly():
     """`.info` cost 21 of the original 45 seconds for data nobody was looking at."""
     prices = FakePriceProvider(histories={"AAPL": make_history("AAPL")})
-    MarketService(prices, FakeCryptoProvider(), stock_symbols=("AAPL",),
-                  crypto_ids=()).get_overview()
+    MarketService(
+        prices, FakeCryptoProvider(), stock_symbols=("AAPL",), crypto_ids=()
+    ).get_overview()
     assert [c for c in prices.calls if c[0] == "get_profile"] == []
 
 
 def test_crypto_failure_does_not_take_down_stocks():
     prices = FakePriceProvider(histories={"AAPL": make_history("AAPL")})
     crypto = FakeCryptoProvider(fail_with=ProviderUnavailable("down", provider="cg"))
-    overview = MarketService(prices, crypto, stock_symbols=("AAPL",),
-                             crypto_ids=("bitcoin",)).get_overview()
+    overview = MarketService(
+        prices, crypto, stock_symbols=("AAPL",), crypto_ids=("bitcoin",)
+    ).get_overview()
     assert "AAPL" in overview.stocks
     assert overview.degraded
     assert "crypto" in overview.failures
@@ -169,17 +171,18 @@ def test_crypto_failure_does_not_take_down_stocks():
 
 def test_stock_failure_does_not_take_down_crypto():
     prices = FakePriceProvider(fail_with=ProviderUnavailable("down", provider="yf"))
-    overview = MarketService(prices, FakeCryptoProvider(), stock_symbols=("AAPL",),
-                             crypto_ids=("bitcoin",)).get_overview()
+    overview = MarketService(
+        prices, FakeCryptoProvider(), stock_symbols=("AAPL",), crypto_ids=("bitcoin",)
+    ).get_overview()
     assert "bitcoin" in overview.crypto
     assert "stocks" in overview.failures
 
 
 def test_symbols_missing_from_the_batch_are_reported_not_hidden():
     prices = FakePriceProvider(histories={"AAPL": make_history("AAPL")})
-    overview = MarketService(prices, FakeCryptoProvider(),
-                             stock_symbols=("AAPL", "DELISTED.XX"),
-                             crypto_ids=()).get_overview()
+    overview = MarketService(
+        prices, FakeCryptoProvider(), stock_symbols=("AAPL", "DELISTED.XX"), crypto_ids=()
+    ).get_overview()
     assert "DELISTED.XX" in overview.failures["missing_symbols"]
 
 
@@ -205,7 +208,7 @@ def test_default_watchlist_has_no_delisted_tickers():
     ("symbol", "expected"),
     [
         ("AAPL", "USD"),
-        ("0005.HK", "HKD"),      # was labelled USD before this existed
+        ("0005.HK", "HKD"),  # was labelled USD before this existed
         ("RELIANCE.NS", "INR"),
         ("TCS.NS", "INR"),
         ("SHEL.L", "GBP"),

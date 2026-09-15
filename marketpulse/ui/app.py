@@ -166,9 +166,7 @@ def _stock_detail(client: MarketPulseClient) -> None:
         state.show_error(exc, context="News")
 
     st.markdown("##### AI analysis")
-    analysis.analysis_panel(
-        client, raw, ai_enabled=bool(service_info().get("ai_enabled"))
-    )
+    analysis.analysis_panel(client, raw, ai_enabled=bool(service_info().get("ai_enabled")))
 
 
 def _crypto_detail(client: MarketPulseClient) -> None:

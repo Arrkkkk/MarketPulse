@@ -70,8 +70,8 @@ def test_rows_are_kept_whole_not_interpolated():
 
 def test_a_spike_survives_downsampling_where_a_stride_would_lose_it():
     closes = [100.0] * 1000
-    closes[497] = 500.0   # a spike a stride of 20 steps straight over
-    closes[503] = 10.0    # and a crash
+    closes[497] = 500.0  # a spike a stride of 20 steps straight over
+    closes[503] = 10.0  # and a crash
     frame = frame_with_closes(closes)
 
     lttb = downsample_ohlcv(frame, 50)

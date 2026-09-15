@@ -36,6 +36,9 @@ dev = [
     "ruff>=0.6",
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "mypy>=1.11",
+    "import-linter>=2.0",
+    "pip-audit>=2.7",
 ]
 
 [tool.ruff]
@@ -52,4 +55,85 @@ addopts = "-q"
 
 [tool.coverage.run]
 source = ["marketpulse"]
-omit = ["*/test_*.py"]
+omit = [
+    "*/test_*.py",
+    # Streamlit call sequences need a script context to execute, so pytest
+    # cannot reach them meaningfully and a gate including them would measure
+    # the wrong thing. The UI is covered instead by scripts/smoke_ui.py,
+    # which drives the real app through Streamlit's AppTest harness, and by
+    # tests/test_imports.py, which at minimum imports every module.
+    "marketpulse/ui/*",
+]
+
+[tool.coverage.report]
+# The gate is on the surface pytest can actually exercise. Currently 90.6%.
+fail_under = 88
+show_missing = true
+
+[tool.mypy]
+python_version = "3.12"
+files = ["marketpulse"]
+# Pragmatic rather than strict: the value here is catching a wrong attribute
+# or a None that cannot be None, not annotating every pandas expression.
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# The UI is Streamlit call sequences; there is little for a type checker to
+# find and a great deal of framework dynamism for it to trip over.
+module = "marketpulse.ui.*"
+ignore_errors = true
+
+# The layering rule from the architecture, enforced rather than documented.
+# ui -> client -> api -> services -> providers -> platform, never upward.
+[tool.importlinter]
+root_package = "marketpulse"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layers point inward only"
+type = "layers"
+layers = [
+    "marketpulse.ui",
+    "marketpulse.client",
+    "marketpulse.api",
+    "marketpulse.services",
+    "marketpulse.providers",
+    "marketpulse.platform",
+]
+exhaustive = false
+
+[[tool.importlinter.contracts]]
+name = "Only the UI may import Streamlit"
+type = "forbidden"
+source_modules = [
+    "marketpulse.platform",
+    "marketpulse.providers",
+    "marketpulse.services",
+    "marketpulse.api",
+    "marketpulse.client",
+    "marketpulse.schema",
+    "marketpulse.ai",
+]
+forbidden_modules = ["streamlit"]
+
+[[tool.importlinter.contracts]]
+# allow_indirect_imports: the ban is on a module reaching for an SDK
+# itself. services/factory.py is the composition root and is *supposed* to
+# name concrete providers, which transitively pulls in their SDKs — that is
+# the design, not a violation.
+name = "Only providers may import upstream SDKs"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = [
+    "marketpulse.platform",
+    "marketpulse.services",
+    "marketpulse.api",
+    "marketpulse.client",
+    "marketpulse.ui",
+    "marketpulse.schema",
+]
+forbidden_modules = ["yfinance", "pycoingecko"]

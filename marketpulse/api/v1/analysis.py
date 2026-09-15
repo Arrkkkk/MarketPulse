@@ -97,6 +97,7 @@ def insights(body: InsightsRequest, analyst: AnalystDep) -> StreamingResponse:
     POST rather than GET: the prompt is a body, not an identifier, and it
     should not end up in access logs or browser history.
     """
+
     def events() -> Iterator[str]:
         try:
             for chunk in analyst.stream_insights(body.question):

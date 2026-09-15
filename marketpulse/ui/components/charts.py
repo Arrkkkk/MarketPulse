@@ -111,9 +111,7 @@ def line(response: HistoryResponse, label: str, currency: str = "USD") -> None:
     if frame.empty:
         st.info("No price data in this range.")
         return
-    fig = go.Figure(
-        data=[go.Scatter(x=frame.index, y=frame["close"], mode="lines", name=label)]
-    )
+    fig = go.Figure(data=[go.Scatter(x=frame.index, y=frame["close"], mode="lines", name=label)])
     fig.update_layout(
         margin=dict(l=0, r=0, t=10, b=0),
         height=380,
@@ -128,7 +126,5 @@ def volume(response: HistoryResponse) -> None:
     if frame.empty or frame["volume"].sum() == 0:
         return
     fig = go.Figure(data=[go.Bar(x=frame.index, y=frame["volume"])])
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=10, b=0), height=200, yaxis_title="Volume"
-    )
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=200, yaxis_title="Volume")
     st.plotly_chart(fig, width="stretch")

@@ -88,7 +88,7 @@ def test_memory_tier_is_backfilled_from_disk(tmp_path):
     Cache(db_path=path).set("k", {"v": 1}, ttl=60)
 
     fresh = Cache(db_path=path)
-    assert fresh.get("k") == {"v": 1}      # disk hit, back-fills memory
+    assert fresh.get("k") == {"v": 1}  # disk hit, back-fills memory
     assert fresh._memory.get(f"{CACHE_VERSION}:k") is not None
 
 

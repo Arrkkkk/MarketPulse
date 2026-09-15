@@ -107,16 +107,12 @@ class CoinGeckoProvider:
                 market_cap=data.get(f"{vs_currency}_market_cap"),
                 volume_24h=data.get(f"{vs_currency}_24h_vol"),
                 vs_currency=vs_currency,
-                as_of=(
-                    datetime.fromtimestamp(ts, tz=UTC) if ts else utcnow()
-                ),
+                as_of=(datetime.fromtimestamp(ts, tz=UTC) if ts else utcnow()),
             )
         # An empty mapping for a non-empty request means every id was
         # rejected, which is a caller error worth surfacing loudly.
         if not out:
-            raise SymbolNotFound(
-                f"no quotes for any of {coin_ids!r}", provider=PROVIDER_NAME
-            )
+            raise SymbolNotFound(f"no quotes for any of {coin_ids!r}", provider=PROVIDER_NAME)
         return out
 
     def get_history(self, coin_id: str, days: str = "30", vs_currency: str = "usd") -> PriceHistory:

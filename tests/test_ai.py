@@ -132,8 +132,10 @@ def test_cost_arithmetic():
     from marketpulse.ai.registry import ModelSpec
 
     spec = ModelSpec(
-        id="test", display_name="test",
-        input_usd_per_mtok=0.10, output_usd_per_mtok=0.40,
+        id="test",
+        display_name="test",
+        input_usd_per_mtok=0.10,
+        output_usd_per_mtok=0.40,
     )
     assert spec.estimate_cost_usd(1_000_000, 1_000_000) == pytest.approx(0.50)
     assert spec.estimate_cost_usd(500_000, 0) == pytest.approx(0.05)
@@ -310,8 +312,10 @@ def test_missing_usage_metadata_is_tolerated(cache):
 
 def test_an_unparseable_response_triggers_exactly_one_repair_attempt(cache):
     client = make_client(
-        [FakeResponse(parsed=None, text="I'm afraid I can't do that"),
-         FakeResponse(parsed=good_analysis())]
+        [
+            FakeResponse(parsed=None, text="I'm afraid I can't do that"),
+            FakeResponse(parsed=good_analysis()),
+        ]
     )
     result = NewsAnalyst(client=client, cache=cache).analyze("AAPL", ARTICLES)
     assert result.analysis.sentiment is Sentiment.BULLISH
@@ -384,8 +388,10 @@ def test_the_second_identical_request_does_not_call_the_model(cache):
 
 def test_a_changed_article_set_invalidates_the_cached_analysis(cache):
     client = make_client(
-        [FakeResponse(parsed=good_analysis()),
-         FakeResponse(parsed=good_analysis(Sentiment.BEARISH))]
+        [
+            FakeResponse(parsed=good_analysis()),
+            FakeResponse(parsed=good_analysis(Sentiment.BEARISH)),
+        ]
     )
     analyst = NewsAnalyst(client=client, cache=cache)
     analyst.analyze("AAPL", ARTICLES)
@@ -456,3 +462,11 @@ def test_insights_streaming_goes_through_the_hardened_prompt(cache):
     analyst = NewsAnalyst(client=client, cache=cache)
     list(analyst.stream_insights("What is happening in markets?"))
     assert "<question>" in client.fake_models.calls[0]["contents"]
+
+
+def test_the_emergency_fallback_id_is_a_verified_model():
+    """Used when models.json is unreadable, so it has to be an id that works.
+    It previously named gemini-2.5-flash, which returns 404."""
+    from marketpulse.ai.registry import _FALLBACK_MODEL_ID, load_catalog
+
+    assert _FALLBACK_MODEL_ID in {m.id for m in load_catalog()}

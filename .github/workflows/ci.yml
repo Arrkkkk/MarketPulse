@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes an in-flight run on the same ref.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The test suite never touches the network. If something tries, it should
+  # fail loudly here rather than pass by quietly reaching the real API.
+  GEMINI_API_KEY: ""
+  NEWS_API_KEY: ""
+  MARKETAUX_API_KEY: ""
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor is what pyproject claims to support; the ceiling is what
+        # the Dockerfile ships. Both have to work.
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install
+        run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Lint
+        run: uv run ruff check marketpulse tests scripts
+
+      - name: Format check
+        run: uv run ruff format --check marketpulse tests scripts
+
+      - name: Types
+        run: uv run mypy
+
+      - name: Architecture contracts
+        # ui -> client -> api -> services -> providers -> platform, and no
+        # layer outside ui/ may import Streamlit. Enforced, not documented.
+        run: uv run lint-imports
+
+      - name: Tests
+        run: uv run pytest --cov --cov-report=xml --cov-report=term --cov-fail-under=88
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: error
+
+  packaging:
+    # The requirements.txt encoding bug shipped and survived three commits.
+    # This job is the reason it cannot again.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: requirements.txt installs with plain pip
+        run: |
+          python -m venv /tmp/piptest
+          /tmp/piptest/bin/pip install --quiet --dry-run -r requirements.txt
+
+      - name: No NUL bytes in packaging files
+        # `data.decode("ascii")` succeeds on UTF-16-encoded ASCII, because NUL
+        # is a valid ASCII codepoint. Checking for NUL is the assertion that
+        # actually distinguishes the two.
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          bad = [p for p in (Path("requirements.txt"), Path("pyproject.toml"))
+                 if p.read_bytes().count(0)]
+          if bad:
+              sys.exit(f"NUL bytes found in {bad} — not UTF-8")
+          print("packaging files are clean UTF-8")
+          PY
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Dependency audit
+        # Audits requirements.txt rather than the environment: the local
+        # marketpulse package is editable and not on PyPI, and --strict
+        # treats a skipped distribution as a failure. requirements.txt is
+        # the real dependency surface anyway.
+        run: uv run pip-audit --strict -r requirements.txt
+
+  docker:
+    # Docker was never installed on the machine this was developed on, so the
+    # build has never run locally. This job is where that claim gets tested.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: marketpulse:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Service starts and reports healthy
+        run: |
+          docker run -d --name api -p 8000:8000 \
+            -e MARKETPULSE_PREWARM=0 marketpulse:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health; then
+              echo "healthy"; break
+            fi
+            sleep 2
+          done
+          curl -sf http://localhost:8000/health || (docker logs api && exit 1)
+          curl -sf http://localhost:8000/openapi.json > /dev/null
+
+      - name: Runs as a non-root user
+        run: |
+          test "$(docker exec api id -u)" != "0" || (echo "container is root" && exit 1)
+          echo "uid $(docker exec api id -u)"
+
+      - name: Compose config is valid
+        run: docker compose config > /dev/null
+
+      - name: Logs on failure
+        if: failure()
+        run: docker logs api || true

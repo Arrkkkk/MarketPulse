@@ -29,9 +29,7 @@ def _verdict(result: AnalysisResult) -> None:
     left, right = st.columns([1, 2])
     with left:
         st.metric("Sentiment", f"{icon} {label}")
-        st.progress(
-            analysis.confidence, text=f"Confidence {analysis.confidence:.0%}"
-        )
+        st.progress(analysis.confidence, text=f"Confidence {analysis.confidence:.0%}")
     with right:
         st.write(analysis.summary)
 
@@ -78,9 +76,7 @@ def analysis_panel(client: MarketPulseClient, symbol: str, *, ai_enabled: bool) 
     carries prose for immediacy while the structured read follows.
     """
     if not ai_enabled:
-        st.info(
-            "AI analysis is unavailable: the server has no `GEMINI_API_KEY` configured."
-        )
+        st.info("AI analysis is unavailable: the server has no `GEMINI_API_KEY` configured.")
         return
 
     if not st.button(f"Analyse {symbol} news", key=f"analyse_{symbol}"):

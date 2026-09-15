@@ -79,12 +79,25 @@ class MarketPulseClient:
         self,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = DEFAULT_TIMEOUT,
+        http_client: httpx.Client | None = None,
     ) -> None:
+        """`http_client` exists so tests can hand in Starlette's TestClient,
+        which is itself an httpx.Client wired straight to the ASGI app. That
+        exercises the real client against the real service — serialization,
+        status mapping, SSE parsing — without a socket, and it is the only
+        way the two halves of the split get tested together.
+
+        (httpx.ASGITransport is not usable here: it is async-only, so a
+        synchronous httpx.Client cannot close it.)
+        """
         self.base_url = base_url.rstrip("/")
-        self._http = httpx.Client(base_url=self.base_url, timeout=timeout)
+        self._owns_http = http_client is None
+        self._http = http_client or httpx.Client(base_url=self.base_url, timeout=timeout)
 
     def close(self) -> None:
-        self._http.close()
+        # An injected client belongs to whoever created it.
+        if self._owns_http:
+            self._http.close()
 
     def __enter__(self) -> MarketPulseClient:
         return self
@@ -186,18 +199,14 @@ class MarketPulseClient:
 
     # -- ai ---------------------------------------------------------------
 
-    def get_analysis(
-        self, symbol: str, limit: int = 5, refresh: bool = False
-    ) -> AnalysisResult:
+    def get_analysis(self, symbol: str, limit: int = 5, refresh: bool = False) -> AnalysisResult:
         return AnalysisResult.model_validate(
             self._get(f"/v1/analysis/{symbol}", limit=limit, refresh=refresh)
         )
 
     def stream_analysis(self, symbol: str, limit: int = 5) -> Iterator[str]:
         """Yield summary text as the model produces it."""
-        yield from self._stream(
-            "GET", f"/v1/analysis/{symbol}/stream", params={"limit": limit}
-        )
+        yield from self._stream("GET", f"/v1/analysis/{symbol}/stream", params={"limit": limit})
 
     def stream_insights(self, question: str) -> Iterator[str]:
         yield from self._stream("POST", "/v1/insights", json={"question": question})

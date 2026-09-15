@@ -76,9 +76,11 @@ def downsample_ohlcv(frame: pd.DataFrame, max_points: int) -> pd.DataFrame:
     if n <= max_points or max_points < 3:
         return frame
 
-    x = frame.index.view("int64").astype(np.float64) if isinstance(
-        frame.index, pd.DatetimeIndex
-    ) else np.arange(n, dtype=np.float64)
+    x = (
+        frame.index.view("int64").astype(np.float64)
+        if isinstance(frame.index, pd.DatetimeIndex)
+        else np.arange(n, dtype=np.float64)
+    )
     y = frame["close"].to_numpy(dtype=np.float64)
 
     # A NaN close would poison the area comparison; carry the last good value

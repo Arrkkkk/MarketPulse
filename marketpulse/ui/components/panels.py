@@ -23,9 +23,7 @@ def stock_snapshots(quotes: list[Quote], limit: int) -> None:
             change = quote.change
             pct = quote.change_percent
             delta = (
-                f"{change:+,.2f} ({pct:+.2f}%)"
-                if change is not None and pct is not None
-                else None
+                f"{change:+,.2f} ({pct:+.2f}%)" if change is not None and pct is not None else None
             )
             # No currency label when the venue is unknown — better a bare
             # number than one tagged with the wrong currency.
@@ -62,9 +60,7 @@ def key_metrics(quote: Quote, profile: CompanyProfile | None) -> None:
             "Last close",
             f"{quote.price:,.2f} {currency}".strip(),
             delta=(
-                f"{change:+,.2f} ({pct:+.2f}%)"
-                if change is not None and pct is not None
-                else None
+                f"{change:+,.2f} ({pct:+.2f}%)" if change is not None and pct is not None else None
             ),
         )
         if quote.open is not None:

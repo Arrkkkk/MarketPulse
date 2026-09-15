@@ -29,8 +29,10 @@ CATALOG_PATH = Path(__file__).resolve().parent / "models.json"
 PROVIDER_ENV_VARS = {"google": "GEMINI_API_KEY"}
 
 #: Used when the catalog is missing or unreadable. Keeping the app alive on a
-#: known-good id beats failing to start over a data file.
-_FALLBACK_MODEL_ID = "gemini-2.5-flash"
+#: known-good id beats failing to start over a data file — so it must be an
+#: id that actually works. This one is verified by scripts/check_models.py;
+#: the value that used to be here (gemini-2.5-flash) returns 404.
+_FALLBACK_MODEL_ID = "gemini-3.5-flash-lite"
 
 
 @dataclass(frozen=True)
@@ -58,12 +60,10 @@ class ModelSpec:
 
         None rather than 0.0: a missing rate must not read as "this was free".
         """
-        if not self.has_pricing:
+        input_rate, output_rate = self.input_usd_per_mtok, self.output_usd_per_mtok
+        if input_rate is None or output_rate is None:
             return None
-        return (
-            prompt_tokens / 1_000_000 * self.input_usd_per_mtok
-            + output_tokens / 1_000_000 * self.output_usd_per_mtok
-        )
+        return prompt_tokens / 1_000_000 * input_rate + output_tokens / 1_000_000 * output_rate
 
 
 @lru_cache(maxsize=1)
@@ -90,11 +90,7 @@ def load_catalog() -> tuple[ModelSpec, ...]:
         specs = ()
 
     if not specs:
-        return (
-            ModelSpec(
-                id=_FALLBACK_MODEL_ID, display_name=_FALLBACK_MODEL_ID, default=True
-            ),
-        )
+        return (ModelSpec(id=_FALLBACK_MODEL_ID, display_name=_FALLBACK_MODEL_ID, default=True),)
     return specs
 
 

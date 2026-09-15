@@ -97,14 +97,19 @@ marketpulse/
 
 The dependency arrow points inward only: `ui → client → api → services →
 providers → platform`. Nothing in `marketpulse/` outside `ui/` imports
-Streamlit.
+Streamlit, and nothing outside `providers/` imports yfinance or pycoingecko.
+
+Those are not conventions — they are three `import-linter` contracts checked
+on every push, so the layering cannot rot quietly.
 
 ## Development
 
 ```bash
-uv run pytest                     # 310 tests, no network
-uv run pytest --cov               # coverage
+uv run pytest                     # 366 tests, no network
+uv run pytest --cov               # 91% excluding the UI
 uv run ruff check marketpulse/
+uv run mypy                       # clean
+uv run lint-imports               # architecture contracts
 uv run python scripts/smoke_live.py    # hits real upstreams
 uv run python scripts/smoke_ui.py      # drives the UI against a running API
 uv run python scripts/check_models.py  # probes every catalog model (needs a key)
@@ -166,6 +171,29 @@ Interactive docs at `/docs`.
 | `MARKETAUX_API_KEY` | Non-US news falls back to NewsAPI |
 | `MARKETPULSE_API_URL` | UI defaults to `http://localhost:8000` |
 | `LOG_LEVEL` | `INFO` |
+
+## CI
+
+Every push runs lint, formatting, mypy, the three architecture contracts,
+the test suite with a coverage gate, and `pip-audit`, on Python 3.11 and
+3.12. Two jobs exist for specific reasons rather than by habit:
+
+- **packaging** installs `requirements.txt` with plain `pip` and rejects NUL
+  bytes. The file shipped as UTF-16, so `pip install -r` failed outright,
+  and the "fix" was verified with `data.decode("ascii")` — which *succeeds*
+  on UTF-16-encoded ASCII, because NUL is a valid ASCII codepoint. The
+  broken file survived three commits. This job is why it cannot again.
+- **docker** builds the image, starts it, waits for `/health`, and asserts
+  the container is not running as root. Docker is not installed on the
+  machine this was developed on, so this is where that claim gets tested.
+
+Coverage is gated at 88% over the surface pytest can exercise, currently
+90.6%. `marketpulse/ui` is excluded from that number: Streamlit call
+sequences need a script context, so a gate including them would measure the
+wrong thing. The UI is covered by `scripts/smoke_ui.py`, which drives the
+real app through Streamlit's own AppTest harness.
+
+`uv run pre-commit install` runs the fast half of this before each commit.
 
 ## Verified against the live API
 

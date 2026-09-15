@@ -49,9 +49,7 @@ class CachedPriceProvider:
         self.name = inner.name
 
     def get_history(self, symbol: str, period: str = "1y", interval: str = "1d") -> PriceHistory:
-        key = make_key(
-            f"{self.name}:history", symbol=symbol, period=period, interval=interval
-        )
+        key = make_key(f"{self.name}:history", symbol=symbol, period=period, interval=interval)
         frame = self._cache.get(key)
         if frame is not None:
             return PriceHistory(symbol=symbol, interval=interval, frame=frame, cached=True)
@@ -73,9 +71,7 @@ class CachedPriceProvider:
         missing: list[str] = []
 
         for symbol in symbols:
-            key = make_key(
-                f"{self.name}:history", symbol=symbol, period=period, interval=interval
-            )
+            key = make_key(f"{self.name}:history", symbol=symbol, period=period, interval=interval)
             frame = self._cache.get(key)
             if frame is not None:
                 out[symbol] = PriceHistory(
@@ -130,14 +126,11 @@ class CachedCryptoProvider:
         # Quotes are cached as one batch: CoinGecko prices every id in a
         # single call, so per-id entries would buy nothing and cost a request
         # per cache miss.
-        key = make_key(
-            f"{self.name}:quotes", ids=",".join(sorted(coin_ids)), vs=vs_currency
-        )
+        key = make_key(f"{self.name}:quotes", ids=",".join(sorted(coin_ids)), vs=vs_currency)
         payload = self._cache.get(key)
         if payload is not None:
             return {
-                cid: CryptoQuote.model_validate({**q, "cached": True})
-                for cid, q in payload.items()
+                cid: CryptoQuote.model_validate({**q, "cached": True}) for cid, q in payload.items()
             }
         quotes = self._inner.get_quotes(coin_ids, vs_currency)
         self._cache.set(
