@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
+from marketpulse.platform.metrics import get_metrics
 from marketpulse.platform.telemetry import get_logger
 
 T = TypeVar("T")
@@ -291,10 +292,20 @@ def resilient(
     single success or failure rather than three.
     """
     breaker = get_breaker(name)
+    metrics = get_metrics()
 
     def _attempt() -> T:
         if limiter is not None:
             limiter.acquire()
         return call_with_retry(fn, *args, policy=retry, give_up_on=give_up_on, **kwargs)
 
-    return breaker.call(_attempt)
+    # Recorded here because every outbound call in the app funnels through
+    # this function — one instrumentation point rather than one per provider
+    # method, which is how coverage gaps appear.
+    try:
+        result = breaker.call(_attempt)
+    except Exception as exc:
+        metrics.record_provider_call(name, ok=False, error=type(exc).__name__)
+        raise
+    metrics.record_provider_call(name, ok=True)
+    return result

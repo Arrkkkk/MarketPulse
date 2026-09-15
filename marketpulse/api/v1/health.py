@@ -19,6 +19,10 @@ from marketpulse.services.market_service import DEFAULT_CRYPTO_IDS, DEFAULT_STOC
 
 VERSION = "0.3.0"
 
+#: Every outbound dependency with a breaker. One list, so readiness and
+#: /metrics cannot report different sets — gemini was missing from readiness.
+BREAKERS = ("yfinance", "coingecko", "newsapi", "marketaux", "gemini")
+
 router = APIRouter(tags=["meta"])
 
 
@@ -37,7 +41,7 @@ def readiness() -> ReadinessResponse:
     while an upstream is failing, so an open breaker is reported, not fatal.
     """
     checks: dict[str, str] = {}
-    for name in ("yfinance", "coingecko", "newsapi", "marketaux"):
+    for name in BREAKERS:
         checks[f"breaker:{name}"] = get_breaker(name).state
 
     try:
@@ -78,9 +82,6 @@ def metrics() -> dict:
     """
     return {
         "cache": get_cache().stats(),
-        "breakers": {
-            name: get_breaker(name).state
-            for name in ("yfinance", "coingecko", "newsapi", "marketaux", "gemini")
-        },
+        "breakers": {name: get_breaker(name).state for name in BREAKERS},
         **get_metrics().snapshot(),
     }

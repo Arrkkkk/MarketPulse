@@ -37,6 +37,7 @@ from marketpulse.ai.registry import ModelSpec, fallback_model, resolve
 from marketpulse.ai.schemas import AnalysisResult, NewsAnalysis
 from marketpulse.config import get_settings
 from marketpulse.platform.cache import TTL_AI_ANALYSIS, Cache, get_cache, make_key
+from marketpulse.platform.metrics import get_metrics
 from marketpulse.platform.telemetry import get_logger
 from marketpulse.schema.news import NewsArticle
 
@@ -96,9 +97,38 @@ class NewsAnalyst:
         if not refresh:
             cached = self._cache.get(key)
             if cached is not None:
-                return AnalysisResult.model_validate({**cached, "cached": True})
+                result = AnalysisResult.model_validate({**cached, "cached": True})
+                get_metrics().record_ai_call(
+                    result.model,
+                    prompt_tokens=None,  # a cache hit spent no tokens
+                    output_tokens=None,
+                    cost_usd=None,
+                    cached=True,
+                )
+                return result
 
         result = self._analyze_uncached(asset, articles)
+        get_metrics().record_ai_call(
+            result.model,
+            prompt_tokens=result.prompt_tokens,
+            output_tokens=result.output_tokens,
+            cost_usd=result.estimated_cost_usd,
+            fallback=result.fallback,
+        )
+        logger.info(
+            "analysis complete",
+            extra={
+                "symbol": asset,
+                "model": result.model,
+                "sentiment": result.analysis.sentiment.value,
+                "confidence": result.analysis.confidence,
+                "article_count": result.article_count,
+                "prompt_tokens": result.prompt_tokens,
+                "output_tokens": result.output_tokens,
+                "latency_ms": result.latency_ms,
+                "fallback": result.fallback,
+            },
+        )
         self._cache.set(key, result.model_dump(mode="json"), TTL_AI_ANALYSIS)
         return result
 

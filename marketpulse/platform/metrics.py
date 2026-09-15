@@ -71,12 +71,69 @@ class Metrics:
                 "p99_ms": round(self._percentile(samples, 0.99), 1),
                 "max_ms": round(max(samples), 1),
             }
-        return {"latency": summary, "counters": counters}
+        result: dict = {"latency": summary, "counters": counters}
+        rates = self.provider_error_rates()
+        if rates:
+            result["provider_error_rate"] = rates
+        cost_micro = counters.get("ai.cost_micro_usd")
+        if cost_micro:
+            # Reported as estimated, because the catalog rates are unverified.
+            result["ai_estimated_cost_usd"] = round(cost_micro / 1_000_000, 6)
+        return result
 
     def reset(self) -> None:
         with self._lock:
             self._latencies.clear()
             self._counters.clear()
+
+    # -- domain recording -------------------------------------------------
+    # Thin named wrappers rather than raw string keys at every call site, so
+    # the label vocabulary lives in one place and cannot drift.
+
+    def record_provider_call(self, provider: str, *, ok: bool, error: str | None = None) -> None:
+        self.increment(f"provider.{provider}.{'ok' if ok else 'error'}")
+        if error:
+            self.increment(f"provider.{provider}.error.{error}")
+
+    def record_ai_call(
+        self,
+        model: str,
+        *,
+        prompt_tokens: int | None,
+        output_tokens: int | None,
+        cost_usd: float | None,
+        cached: bool = False,
+        fallback: bool = False,
+    ) -> None:
+        self.increment(f"ai.{model}.calls")
+        if cached:
+            self.increment("ai.cache_hits")
+        if fallback:
+            self.increment("ai.fallback_used")
+        if prompt_tokens:
+            self.increment("ai.prompt_tokens", prompt_tokens)
+        if output_tokens:
+            self.increment("ai.output_tokens", output_tokens)
+        if cost_usd is not None:
+            # Micro-USD as an integer: the counters are ints, and a float
+            # accumulator would drift across thousands of small additions.
+            self.increment("ai.cost_micro_usd", int(round(cost_usd * 1_000_000)))
+
+    def provider_error_rates(self) -> dict[str, float]:
+        """Error rate per provider, 0.0 to 1.0."""
+        with self._lock:
+            counters = dict(self._counters)
+        rates: dict[str, float] = {}
+        providers = {
+            k.split(".")[1] for k in counters if k.startswith("provider.") and "." in k[9:]
+        }
+        for provider in sorted(providers):
+            ok = counters.get(f"provider.{provider}.ok", 0)
+            errors = counters.get(f"provider.{provider}.error", 0)
+            total = ok + errors
+            if total:
+                rates[provider] = round(errors / total, 4)
+        return rates
 
 
 _metrics = Metrics()

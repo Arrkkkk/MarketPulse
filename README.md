@@ -105,7 +105,7 @@ on every push, so the layering cannot rot quietly.
 ## Development
 
 ```bash
-uv run pytest                     # 419 tests, no network
+uv run pytest                     # 448 tests, no network
 uv run pytest --cov               # 91% excluding the UI
 uv run ruff check marketpulse/
 uv run mypy                       # clean
@@ -171,6 +171,34 @@ Interactive docs at `/docs`.
 | `MARKETAUX_API_KEY` | Non-US news falls back to NewsAPI |
 | `MARKETPULSE_API_URL` | UI defaults to `http://localhost:8000` |
 | `LOG_LEVEL` | `INFO` |
+| `LOG_FORMAT` | `text`; set `json` for structured logs |
+| `MARKETPULSE_RATELIMIT` | on; `0` disables |
+| `MARKETPULSE_TRUST_PROXY` | off; `1` honours `X-Forwarded-For` |
+| `MARKETPULSE_PREWARM` | on; `0` skips the startup cache warm |
+
+## Observability
+
+`LOG_FORMAT=json` emits one object per line carrying `ts`, `level`,
+`logger`, `message`, `request_id` and any `extra=` fields. Text is the
+default, because a terminal is not a log aggregator.
+
+Every request gets an `X-Request-ID`, honoured from the caller when it looks
+like an id. The ContextVar holding it lives in `platform/telemetry.py`
+rather than in the HTTP middleware that sets it, so any layer can stamp a
+line without importing the API package — which is what makes a request
+traceable from the router down through a provider or model call. Traced live
+across `ai.client` and `ai.analyst` for a single `/v1/analysis` request.
+
+`GET /metrics` reports latency percentiles per route template, cache hit
+rate, breaker states, per-provider error rates, and AI token totals.
+
+Provider error rate measures whether the provider is *working*, not whether
+data exists: a 404 for a nonexistent ticker is a successful call that
+returned nothing, and counting it would make the rate useless as a health
+signal. Same empty-vs-failed distinction as everywhere else.
+
+Percentiles rather than averages — a test asserts that 95 fast calls and 5
+slow ones produce a healthy-looking mean while p95 correctly reads 3000ms.
 
 ## Security
 
