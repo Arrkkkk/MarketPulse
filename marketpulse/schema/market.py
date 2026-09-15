@@ -40,6 +40,13 @@ class Quote(BaseModel):
     currency: str | None = None
     as_of: datetime
     cached: bool = False
+    #: The last N closes, oldest first — a recent-trend sparkline. None
+    #: unless the caller asked `to_quote()` for one; only the overview does
+    #: (see docs/adr/0011-sparkline-payload.md). Never an empty list: a
+    #: symbol either has at least one close, in which case `to_quote()`
+    #: already returned before this could run, or `to_quote()` returned
+    #: None instead of a Quote at all.
+    spark: list[float] | None = None
 
     @property
     def change(self) -> float | None:
@@ -161,18 +168,30 @@ class PriceHistory(BaseModel):
             return None
         return float(self.frame.iloc[-2]["close"])
 
-    def to_quote(self, currency: str | None = None) -> Quote | None:
+    def to_quote(
+        self, currency: str | None = None, *, spark_points: int | None = None
+    ) -> Quote | None:
         """Collapse the series into a quote for the most recent bar.
 
         `currency` is passed in because an OHLCV frame does not carry one.
         Callers that know it (from a profile, or from the ticker suffix via
         `currency_for_symbol`) should supply it; the rest get None.
+
+        `spark_points`, when given, attaches the last N closes (oldest
+        first) as a recent-trend sparkline — a plain window, not a
+        downsampled one: at 30 points against a year of daily bars there is
+        nothing to reduce, and "downsampled" would imply a summary of the
+        full range rather than what this actually is, the tail of it. None
+        by default: only the overview endpoint asks for one, and every
+        other caller of this method would otherwise pay to compute data it
+        never uses.
         """
         last = self.latest
         if last is None:
             return None
         index_ts = self.frame.index[-1]
         as_of = index_ts.to_pydatetime() if hasattr(index_ts, "to_pydatetime") else utcnow()
+        spark = self.frame["close"].tail(spark_points).tolist() if spark_points else None
         return Quote(
             symbol=self.symbol,
             price=float(last["close"]),
@@ -184,6 +203,7 @@ class PriceHistory(BaseModel):
             currency=currency,
             as_of=as_of,
             cached=self.cached,
+            spark=spark,
         )
 
     def tail_days(self, days: int) -> PriceHistory:

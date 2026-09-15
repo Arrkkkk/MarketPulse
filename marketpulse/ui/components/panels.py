@@ -69,8 +69,58 @@ def _format_large(value: float) -> str:
     return f"{value:,.0f}"
 
 
+def _sparkline_svg(points: list[float], *, width: int = 132, height: int = 32) -> str:
+    """A recent-trend sparkline as inline SVG.
+
+    No separate data table the way a full chart gets one (charts.py): the
+    text alternative here is the aria-label itself, stating the actual
+    move in words, which is a complete substitute for 30 points where it
+    would only be a partial one for a year of OHLCV bars.
+
+    Colour comes from `currentColor` plus a `mp-spark-{up,down}` class
+    (marketpulse.css) rather than a literal hex, so it resolves correctly
+    in both themes the same way everything else in this file does — never
+    a hardcoded colour that only happens to work in one of them.
+    """
+    if len(points) < 2:
+        return ""
+    lo, hi = min(points), max(points)
+    span = (hi - lo) or 1.0
+    n = len(points)
+    xs = [i / (n - 1) * width for i in range(n)]
+    ys = [height - ((p - lo) / span) * height for p in points]
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys, strict=True))
+    area = f"0,{height} {line} {width},{height}"
+
+    up = points[-1] >= points[0]
+    css_class = "mp-spark-up" if up else "mp-spark-down"
+    pct = (points[-1] - points[0]) / points[0] * 100 if points[0] else 0.0
+    label = (
+        f"{n}-day trend: {'rose' if up else 'fell'} from {points[0]:,.2f} to "
+        f"{points[-1]:,.2f}, {pct:+.1f}%"
+    )
+
+    return (
+        f'<svg class="{css_class}" viewBox="0 0 {width} {height}" width="100%" '
+        f'height="{height}" preserveAspectRatio="none" role="img" aria-label="{label}">'
+        f'<polygon points="{area}" fill="currentColor" opacity="0.12"></polygon>'
+        f'<polyline points="{line}" fill="none" stroke="currentColor" stroke-width="1.6" '
+        f'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke">'
+        f"</polyline>"
+        f'<circle cx="{xs[-1]:.1f}" cy="{ys[-1]:.1f}" r="2.4" fill="currentColor"></circle>'
+        f"</svg>"
+    )
+
+
 def _price_tile(
-    *, css_key: str, track_key: str, label: str, value: str, raw_price: float, delta: str | None
+    *,
+    css_key: str,
+    track_key: str,
+    label: str,
+    value: str,
+    raw_price: float,
+    delta: str | None,
+    spark: list[float] | None = None,
 ) -> None:
     """A bordered surface with a rail on the edge that moved.
 
@@ -89,6 +139,8 @@ def _price_tile(
         if flash:
             st.markdown(f'<span class="mp-flash mp-flash--{flash}"></span>', unsafe_allow_html=True)
         st.metric(label=label, value=value, delta=delta)
+        if spark and (svg := _sparkline_svg(spark)):
+            st.markdown(svg, unsafe_allow_html=True)
 
 
 def stock_snapshots(quotes: list[Quote], limit: int) -> None:
@@ -115,6 +167,7 @@ def stock_snapshots(quotes: list[Quote], limit: int) -> None:
                 value=_format_price(quote.price),
                 raw_price=quote.price,
                 delta=delta,
+                spark=quote.spark,
             )
 
 

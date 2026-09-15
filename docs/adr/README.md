@@ -18,3 +18,4 @@ database; the interesting question is why this project does not have one.
 | [0008](0008-json-logging-not-structlog.md) | A stdlib JSON formatter, not structlog | Accepted |
 | [0009](0009-in-process-rate-limiting.md) | In-process rate limiting | Accepted, with a known limit |
 | [0010](0010-null-model-pricing.md) | Model pricing stays null until verified | Accepted |
+| [0011](0011-sparkline-payload.md) | A sparkline on the overview, stocks only | Accepted |

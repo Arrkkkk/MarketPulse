@@ -173,6 +173,30 @@
   }
 }
 
+/* Tile sparkline (panels._sparkline_svg): a recent-trend line, coloured by
+ * its own 30-day direction — independent of, and sometimes disagreeing
+ * with, the tile's day-over-day rail above it. `currentColor` inside the
+ * SVG picks up whichever of these two classes wraps it, the same
+ * class-not-literal-hex pattern the rail and flash both use. */
+.mp-spark-up {
+  color: #0d7049;
+  display: block;
+  margin-top: 6px;
+}
+.mp-spark-down {
+  color: #a8281f;
+  display: block;
+  margin-top: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  .mp-spark-up {
+    color: #35b37e;
+  }
+  .mp-spark-down {
+    color: #e5695c;
+  }
+}
+
 /* Skeleton shimmer (ui/components/state.py): a sweep built from
  * `currentColor` rather than a hardcoded white or black highlight, so it
  * reads correctly in both themes without a media query of its own. */

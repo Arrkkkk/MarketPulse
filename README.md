@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/Arrkkkk/MarketPulse/actions/workflows/ci.yml/badge.svg)](https://github.com/Arrkkkk/MarketPulse/actions/workflows/ci.yml)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
-![Coverage 91%](https://img.shields.io/badge/coverage-91%25-brightgreen)
-![Tests 448](https://img.shields.io/badge/tests-448-brightgreen)
+![Coverage 92%](https://img.shields.io/badge/coverage-92%25-brightgreen)
+![Tests 455](https://img.shields.io/badge/tests-455-brightgreen)
 
 Real-time stock and cryptocurrency dashboard with news aggregation and
 AI-generated sentiment analysis, built as a FastAPI service with a thin
@@ -102,6 +102,14 @@ than a wrong one.
 `RELIANCE.NS`. Typing `hsbc` now returns HSBC (USD), 0005.HK (HKD) and
 HSBA.L (GBP).
 
+**Overview tiles carry a 30-day sparkline**, for stocks only — the year of
+daily bars it's sliced from is already in memory building the
+day-over-day delta, so it costs one `pandas.tail()` per symbol, not a
+fetch. Crypto doesn't get one: the overview only ever fetches current
+crypto quotes, never histories, and adding one would mean a new per-coin
+upstream call, not a free byproduct of what's already there —
+[ADR 11](docs/adr/0011-sparkline-payload.md).
+
 ## Measured
 
 Against the pre-refactor baseline, same machine and network. Re-measure with
@@ -114,10 +122,11 @@ Against the pre-refactor baseline, same machine and network. Re-measure with
 | Warm overview, new process | — | 0.016s | what a second visitor pays |
 | `GET /v1/overview` p95 | — | **24ms** | |
 | `IBM period=max` on the wire | ~1.4MB | **38KB** | 37×, gzipped, shape intact |
+| `/v1/overview`, gzipped, with sparklines | 2.3KB | **6.8KB** | +4.5KB for a trend line on 29 tiles — [ADR 11](docs/adr/0011-sparkline-payload.md) |
 | Symbols resolving | 27/29 | **29/29** | two were delisted |
 | Cached AI analysis | — | 2.5ms | vs 2.6s cold |
 | Cache hit rate, browsing session | — | 95% | |
-| Tests | 0 | **448** | 91% covered, no network |
+| Tests | 0 | **455** | 92% covered, no network |
 
 The 45.5s figure decomposed as 21s of `.info` calls, 14.6s of hardcoded
 `sleep(0.5)`, and 9.9s of actual fetching, one symbol at a time.
@@ -195,8 +204,8 @@ Interactive docs at `/docs`.
 ## Development
 
 ```bash
-uv run pytest                      # 448 tests, ~12s, no network
-uv run pytest --cov                # 91%, excluding the UI
+uv run pytest                      # 455 tests, ~12s, no network
+uv run pytest --cov                # 92%, excluding the UI
 uv run ruff check marketpulse
 uv run mypy                        # clean
 uv run lint-imports                # 3 architecture contracts
@@ -221,7 +230,7 @@ covered by `scripts/smoke_ui.py` through Streamlit's own AppTest harness.
 
 ## Decisions
 
-[docs/adr/](docs/adr/) records ten, including the ones this project does
+[docs/adr/](docs/adr/) records eleven, including the ones this project does
 *not* do:
 
 - [No RAG](docs/adr/0003-no-rag.md) — five articles fit in the prompt; retrieval over a set small enough to pass whole costs latency and infrastructure for nothing

@@ -34,6 +34,12 @@ MAX_BARS = 2000
 #: pays for and cannot see.
 DEFAULT_BARS = 800
 
+#: Points in each overview tile's sparkline. get_overview() already holds a
+#: year of daily bars per symbol in memory (needed for the quote itself),
+#: so this costs one pandas .tail() per symbol — no new fetch, no new
+#: cache entry. See docs/adr/0011-sparkline-payload.md.
+SPARK_POINTS = 30
+
 
 def _downsample(history: PriceHistory, max_points: int) -> tuple[PriceHistory, int]:
     """Return (possibly reduced history, original row count).
@@ -64,7 +70,8 @@ def get_overview(service: MarketServiceDep) -> OverviewResponse:
     quotes = [
         q
         for symbol, h in overview.stocks.items()
-        if (q := h.to_quote(currency=currency_for_symbol(symbol))) is not None
+        if (q := h.to_quote(currency=currency_for_symbol(symbol), spark_points=SPARK_POINTS))
+        is not None
     ]
     return OverviewResponse(
         stocks=sorted(quotes, key=lambda q: q.symbol),

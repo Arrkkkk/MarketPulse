@@ -106,6 +106,42 @@ def test_overview_returns_stocks_and_crypto(client):
     assert body["degraded"] is False
 
 
+def test_overview_quotes_carry_a_sparkline(client):
+    """Each stock quote gets a recent-trend sparkline — see ADR 0011.
+
+    The fixture's fake history is 10 rows, fewer than SPARK_POINTS (30): the
+    sparkline is the whole thing, not padded or an error. A symbol either
+    has history or to_quote() returns None before spark is ever built.
+    """
+    quote = client.get("/v1/overview").json()["stocks"][0]
+    assert isinstance(quote["spark"], list)
+    assert 1 < len(quote["spark"]) <= 10
+    assert quote["spark"][-1] == pytest.approx(quote["price"])
+
+
+def test_overview_sparkline_is_capped_at_thirty_points():
+    """With more history available than SPARK_POINTS, only the tail ships —
+    a year of daily bars in memory should not mean a year on the wire."""
+    price = FakePriceProvider(histories={"AAPL": make_history("AAPL", rows=120)})
+    body = build_client(price=price).get("/v1/overview").json()
+    spark = body["stocks"][0]["spark"]
+    assert len(spark) == 30
+    # Oldest first: the fake frame's closes increase by 1 per row, so the
+    # last 30 of 120 start 90 higher than the series' first close.
+    assert spark == sorted(spark)
+
+
+def test_overview_crypto_quotes_have_no_sparkline(client):
+    """Deliberately out of scope for now — see ADR 0011's Consequences.
+
+    A crypto sparkline needs its own history fetch per coin; the overview
+    only ever fetches current crypto quotes, not histories, so there is
+    nothing to slice one from without a new upstream cost this phase does
+    not take on.
+    """
+    assert client.get("/v1/overview").json()["crypto"][0].get("spark") is None
+
+
 def test_overview_is_200_but_degraded_when_one_asset_class_fails():
     """A dashboard showing crypto beats one showing nothing."""
     crypto = FakeCryptoProvider(fail_with=ProviderUnavailable("down", provider="cg"))
