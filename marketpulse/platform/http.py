@@ -164,7 +164,32 @@ class RateLimiter:
         self._updated_at = time.monotonic()
         self._lock = threading.Lock()
 
+    def try_acquire(self, tokens: float = 1.0) -> bool:
+        """Take a token if one is available; never block.
+
+        The inbound counterpart to `acquire`. For an outbound call, waiting
+        is correct — we want the request to happen, just later. For an
+        inbound one it is not: holding a connection open to slow a caller
+        down consumes a worker and is indistinguishable from the service
+        being slow. Reject with 429 instead.
+        """
+        with self._lock:
+            now = time.monotonic()
+            self._tokens = min(self._capacity, self._tokens + (now - self._updated_at) * self._rate)
+            self._updated_at = now
+            if self._tokens >= tokens:
+                self._tokens -= tokens
+                return True
+            return False
+
+    def seconds_until_available(self, tokens: float = 1.0) -> float:
+        """How long until `tokens` would be available, for Retry-After."""
+        with self._lock:
+            deficit = max(0.0, tokens - self._tokens)
+            return deficit / self._rate
+
     def acquire(self, tokens: float = 1.0) -> None:
+        """Block until a token is available. For outbound calls only."""
         while True:
             with self._lock:
                 now = time.monotonic()

@@ -22,9 +22,12 @@ from fastapi.middleware.gzip import GZipMiddleware
 from marketpulse.api.errors import install_exception_handlers
 from marketpulse.api.middlewares import (
     ErrorHandlerMiddleware,
+    RateLimitMiddleware,
     RequestIdMiddleware,
+    SecurityHeadersMiddleware,
     TimingMiddleware,
 )
+from marketpulse.api.middlewares.ratelimit import Tier
 from marketpulse.api.v1.health import VERSION
 from marketpulse.api.v1.router import api_router, meta_router
 from marketpulse.config import get_settings
@@ -85,8 +88,13 @@ async def lifespan(app: FastAPI):
     logger.info("marketpulse api shutting down")
 
 
-def create_app() -> FastAPI:
-    """Application factory — tests build their own instance."""
+def create_app(rate_limit_tiers: tuple[Tier, Tier] | None = None) -> FastAPI:
+    """Application factory — tests build their own instance.
+
+    `rate_limit_tiers` is (default, ai). Overridden only by tests, which
+    need limits small enough to hit deterministically rather than limits
+    that depend on how fast the machine runs the loop.
+    """
     app = FastAPI(
         title="MarketPulse API",
         description=DESCRIPTION,
@@ -96,13 +104,49 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
-    # Outermost first.
-    app.add_middleware(ErrorHandlerMiddleware)
-    app.add_middleware(RequestIdMiddleware)
-    app.add_middleware(TimingMiddleware)
-    # OHLCV JSON is highly repetitive and compresses roughly 5:1. Applied
-    # inside the timing middleware so recorded latency includes it.
+    # Whether X-Forwarded-For can be trusted. Off by default: the header is
+    # trivially forged when there is no proxy in front, which would let a
+    # caller mint a new rate-limit identity per request.
+    app.state.trust_proxy_headers = os.environ.get("MARKETPULSE_TRUST_PROXY") == "1"
+
+    # Starlette's add_middleware PREPENDS, so the LAST one added ends up
+    # outermost. They are therefore registered inner-to-outer below, which
+    # reads backwards and is the whole reason this comment exists — an
+    # earlier version listed them outer-to-inner and produced exactly the
+    # inverse stack: 429s carried no request id, ErrorHandler could not see
+    # failures in the middleware above it, and rejected requests were being
+    # counted as served latency.
+    #
+    # Effective order, outermost to innermost:
+    #   CORS -> ErrorHandler -> SecurityHeaders -> RequestId -> RateLimit
+    #        -> Timing -> GZip -> router
+
+    # OHLCV JSON is repetitive and compresses about 3:1. Innermost, so the
+    # timing above it includes the cost of compressing.
     app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+    # Inside RateLimit: a rejected request was never served and should not
+    # appear in served-latency percentiles.
+    app.add_middleware(TimingMiddleware)
+
+    # Inside RequestId, so a 429 body carries a request id like every other
+    # error response.
+    default_tier, ai_tier = rate_limit_tiers or (None, None)
+    app.add_middleware(
+        RateLimitMiddleware,
+        enabled=os.environ.get("MARKETPULSE_RATELIMIT", "1") != "0",
+        default_tier=default_tier,
+        ai_tier=ai_tier,
+    )
+    app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # Outside everything it protects, so an exception anywhere below still
+    # becomes a clean JSON error rather than a stack trace.
+    app.add_middleware(ErrorHandlerMiddleware)
+
+    # Outermost: CORS headers must reach error responses too, and a
+    # preflight should be answered without waking anything below.
     app.add_middleware(
         CORSMiddleware,
         # Explicit origins, not "*". The Streamlit UI is the only browser
@@ -112,7 +156,7 @@ def create_app() -> FastAPI:
             "http://127.0.0.1:8501",
             "http://ui:8501",
         ],
-        allow_methods=["GET"],
+        allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
 

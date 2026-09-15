@@ -105,7 +105,7 @@ on every push, so the layering cannot rot quietly.
 ## Development
 
 ```bash
-uv run pytest                     # 366 tests, no network
+uv run pytest                     # 419 tests, no network
 uv run pytest --cov               # 91% excluding the UI
 uv run ruff check marketpulse/
 uv run mypy                       # clean
@@ -171,6 +171,27 @@ Interactive docs at `/docs`.
 | `MARKETAUX_API_KEY` | Non-US news falls back to NewsAPI |
 | `MARKETPULSE_API_URL` | UI defaults to `http://localhost:8000` |
 | `LOG_LEVEL` | `INFO` |
+
+## Security
+
+| | |
+|---|---|
+| Credentials | `SecretStr`, never logged — asserted with a sentinel key hunted through reprs, logs, tracebacks, error bodies and every metadata endpoint |
+| Rate limiting | Per-client token buckets, two tiers. AI endpoints get 0.2/s (burst 10) because they cost money; everything else 10/s (burst 60). `/health` exempt |
+| Input | Symbol allowlist regex before anything reaches yfinance or a prompt; question length capped at the edge |
+| Prompt injection | Escaped, delimited, instructions-after-data, plus a live eval — see below |
+| CORS | Explicit origin allowlist, never `*` |
+| Headers | nosniff, DENY framing, no-referrer, restrictive CSP and Permissions-Policy. HSTS deliberately left to the TLS terminator |
+| Errors | One envelope; `detail` only under DEBUG, so production leaks nothing |
+| Dependencies | `pip-audit` on every push, Dependabot weekly |
+
+`X-Forwarded-For` is honoured only when `MARKETPULSE_TRUST_PROXY=1`. The
+header is trivially forged without a proxy in front, and a test asserts that
+a spray of forged addresses still hits the limit.
+
+Rate limiting is in-process: with more than one replica each gets its own
+allowance, so a shared Redis bucket becomes necessary the moment this is
+scaled horizontally. Noted rather than pre-built.
 
 ## CI
 
