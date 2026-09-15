@@ -16,7 +16,13 @@ services:
     dockerfilePath: ./Dockerfile
     plan: starter
     region: oregon
-    healthCheckPath: /health
+    # No healthCheckPath here — Render's Blueprint validator rejects one on
+    # a pserv outright ("pserv service type cannot have a health check
+    # path"), confirmed against the actual dashboard error rather than
+    # assumed. A private service's health is instead just whether the
+    # declared port accepts a connection; /health stays meaningful for
+    # anyone hitting it directly over the private network, just not wired
+    # in as a platform-level check the way the ui service's is below.
     envVars:
       - key: LOG_FORMAT
         value: json
