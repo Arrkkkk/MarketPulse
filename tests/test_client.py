@@ -11,6 +11,8 @@ the single contract between the UI and the backend.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -119,6 +121,38 @@ def test_bars_to_frame_handles_an_empty_response(client):
 
     empty = HistoryResponse(symbol="X", interval="1d", as_of=utcnow(), count=0, total=0, bars=[])
     assert bars_to_frame(empty).empty
+
+
+def test_bars_to_frame_handles_a_dst_transition_in_the_bar_timestamps():
+    """Found from a real Render deploy: a year of daily AAPL bars crashed
+    the client with `ValueError: Tz-aware datetime.datetime cannot be
+    converted to datetime64 unless utc=True`.
+
+    Root cause: yfinance localizes daily bars to the exchange timezone, so
+    bars before and after a DST transition carry different fixed UTC
+    offsets (EST vs EDT) once each one becomes its own aware `datetime` on
+    the wire. `pd.DatetimeIndex` refuses to infer one index tz from a list
+    mixing those offsets unless told to normalize to UTC.
+    """
+    from datetime import timedelta, timezone
+
+    from marketpulse.schema.api import HistoryResponse, OHLCVBar
+    from marketpulse.schema.market import utcnow
+
+    est = timezone(timedelta(hours=-5))
+    edt = timezone(timedelta(hours=-4))
+    bars = [
+        OHLCVBar(t=datetime(2026, 3, 1, 9, 30, tzinfo=est), o=1, h=1, l=1, c=1, v=1),
+        OHLCVBar(t=datetime(2026, 3, 9, 9, 30, tzinfo=edt), o=2, h=2, l=2, c=2, v=1),
+    ]
+    response = HistoryResponse(
+        symbol="AAPL", interval="1d", as_of=utcnow(), count=len(bars), total=len(bars), bars=bars
+    )
+
+    frame = bars_to_frame(response)
+
+    assert len(frame) == 2
+    assert frame.index.is_monotonic_increasing
 
 
 def test_profile_round_trips():
