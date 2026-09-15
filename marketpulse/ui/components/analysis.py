@@ -105,19 +105,30 @@ def analysis_panel(client: MarketPulseClient, symbol: str, *, ai_enabled: bool) 
     if not st.button(f"Analyse {symbol} news", key=f"analyse_{symbol}"):
         return
 
-    st.markdown("###### Summary")
-    try:
-        st.write_stream(client.stream_analysis(symbol))
-    except MarketPulseClientError as exc:
-        show_error(exc, context="AI summary")
-        return
+    # st.status labels the wait rather than leaving the page looking
+    # frozen for the ~2.6s a cold analysis takes — expanded throughout,
+    # not just while running, since the streamed summary underneath it is
+    # real content to keep reading, not a process log to tuck away once
+    # done. The polished verdict card renders after, outside the status
+    # box: this brackets the raw AI process, the card is the answer.
+    with st.status(f"Analysing {symbol} news…", expanded=True) as status:
+        st.markdown("###### Summary")
+        try:
+            st.write_stream(client.stream_analysis(symbol))
+        except MarketPulseClientError as exc:
+            status.update(label="AI summary failed", state="error")
+            show_error(exc, context="AI summary")
+            return
 
-    st.markdown("###### Structured read")
-    try:
-        result = client.get_analysis(symbol)
-    except MarketPulseClientError as exc:
-        show_error(exc, context="AI analysis")
-        return
+        st.markdown("###### Structured read")
+        try:
+            result = client.get_analysis(symbol)
+        except MarketPulseClientError as exc:
+            status.update(label="AI analysis failed", state="error")
+            show_error(exc, context="AI analysis")
+            return
+
+        status.update(label=f"Analysis of {symbol} complete", state="complete")
 
     _verdict(result, symbol=symbol)
     _provenance(result)

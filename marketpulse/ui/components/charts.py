@@ -33,13 +33,21 @@ CRYPTO_RANGE_OPTIONS: dict[str, str] = {
 
 
 def range_selector(key: str, options: dict[str, str], default: str = "1Y") -> str:
-    """A horizontal range picker. Returns the provider-level period value."""
+    """A horizontal range picker. Returns the provider-level period value.
+
+    st.segmented_control rather than a horizontal radio: the same single-
+    choice semantics (required=True keeps exactly one option selected,
+    matching radio's own always-one-selected behaviour), in the tactile,
+    button-like form actually built for a short row of options — a radio's
+    circle-and-label pairs are designed for a vertical list, and horizontal
+    was always radio doing a segmented control's job by hand.
+    """
     labels = list(options)
-    chosen = st.radio(
+    chosen = st.segmented_control(
         "Range",
         labels,
-        index=labels.index(default) if default in labels else 0,
-        horizontal=True,
+        default=default if default in labels else labels[0],
+        required=True,
         key=key,
         label_visibility="collapsed",
     )

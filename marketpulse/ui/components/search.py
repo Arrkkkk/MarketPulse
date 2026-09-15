@@ -90,11 +90,19 @@ def symbol_input(client: MarketPulseClient, *, key: str = "symbol_query") -> str
         )
         return previous
 
+    # Pills over a radio list: these are short, mutually exclusive labels
+    # a person picks by recognising the company name and exchange at a
+    # glance, not by reading a list top to bottom — the chip form matches
+    # how the choice is actually made. required=True keeps exactly one
+    # selected, same as radio always did; default=0 keeps the first match
+    # pre-selected on first render, which radio also did implicitly.
     labels = [m.label for m in matches]
-    chosen = st.radio(
+    chosen = st.pills(
         "Matches",
         options=range(len(matches)),
         format_func=lambda i: labels[i],
+        default=0,
+        required=True,
         key=f"{key}_match",
         label_visibility="collapsed",
     )
@@ -111,6 +119,11 @@ def _offer_alternatives(client: MarketPulseClient, ticker: str) -> None:
     A user typing RELIANCE may want RELIANCE.NS; someone typing SHEL may
     want SHEL.L. Failures here are swallowed: this is a convenience, and it
     must not turn a working page into an error.
+
+    A popover rather than an expander: this is a small, secondary, fully
+    optional detour from the search that's already resolved above it — an
+    expander pushes the page's layout down for as long as it stays open,
+    which is the wrong weight for "here's an aside, if you want it."
     """
     try:
         matches = [m for m in client.search(ticker, limit=5).matches if m.symbol != ticker.upper()]
@@ -118,7 +131,7 @@ def _offer_alternatives(client: MarketPulseClient, ticker: str) -> None:
         return
     if not matches:
         return
-    with st.expander(f"Other listings matching “{ticker}”"):
+    with st.popover(f"Other listings matching “{ticker}”"):
         for match in matches:
             if st.button(match.label, key=f"alt_{match.symbol}", width="stretch"):
                 st.session_state["symbol"] = match.symbol
