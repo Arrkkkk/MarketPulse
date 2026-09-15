@@ -1,0 +1,48 @@
+/* MarketPulse — the one hand-written stylesheet.
+ *
+ * Everything reachable through .streamlit/config.toml lives there instead.
+ * This file exists only for the handful of things the theme-token layer
+ * cannot reach, and is anchored to `data-testid` attributes rather than
+ * Streamlit's internal class names, which are not a stable contract across
+ * minor versions.
+ *
+ * Loaded once by marketpulse.ui.theme.inject_styles() as a <link>, so it is
+ * cached by the browser like any other static asset rather than re-parsed
+ * from an inline <style> block on every rerun.
+ */
+
+/* Every figure in the app is tabular: a ticker's price, high, low, volume
+ * and delta all set in IBM Plex Mono with true tabular figures, so a
+ * column of prices aligns on the decimal point and a value that changes on
+ * refresh does not shift width and jostle the layout around it. */
+[data-testid="stMetricValue"],
+[data-testid="stMetricDelta"],
+[data-testid="stMetricLabel"] {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+[data-testid="stMetricLabel"] {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+
+/* Streamlit's default focus outline is easy to lose against a themed
+ * surface. Widened and pinned to the accent so keyboard focus stays
+ * visible in both themes — reinforced, never removed.
+ *
+ * Hardcoded rather than read from a Streamlit internal CSS variable:
+ * none is documented, and the whole reason this file targets data-testid
+ * instead of class names is to not depend on undocumented internals. */
+[data-testid="stAppViewContainer"] :focus-visible {
+  outline: 2px solid #0e5f73;
+  outline-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-testid="stAppViewContainer"] :focus-visible {
+    outline-color: #4badc4;
+  }
+}

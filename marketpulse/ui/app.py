@@ -17,6 +17,7 @@ from marketpulse.client import DEFAULT_BASE_URL, MarketPulseClient, MarketPulseC
 from marketpulse.schema.exchanges import currency_for_symbol
 from marketpulse.schema.market import Quote
 from marketpulse.ui.components import analysis, charts, panels, search, state
+from marketpulse.ui.theme import inject_styles
 
 SNAPSHOT_STEP = 4
 
@@ -212,6 +213,7 @@ def main() -> None:
         page_icon="📈",
         initial_sidebar_state="expanded",
     )
+    inject_styles()
     st.title("📈 MarketPulse")
     st.caption("Real-time stock and cryptocurrency tracking with news aggregation")
 

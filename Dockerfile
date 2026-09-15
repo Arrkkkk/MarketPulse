@@ -22,6 +22,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY marketpulse ./marketpulse
 COPY scripts ./scripts
 COPY app.py ./
+# Theme config, self-hosted fonts and the one stylesheet — see
+# .streamlit/config.toml. Streamlit resolves the static/ folder relative to
+# app.py's directory, so it has to sit next to it, in the image as in the
+# repo.
+COPY .streamlit ./.streamlit
+COPY static ./static
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
