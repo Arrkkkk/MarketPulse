@@ -159,14 +159,35 @@ class PriceHistory(BaseModel):
         return self.frame.empty
 
     @property
+    def _valid_closes(self) -> pd.DataFrame:
+        """Rows with a real close — see `latest` for why this exists."""
+        return self.frame[self.frame["close"].notna()]
+
+    @property
     def latest(self) -> pd.Series | None:
-        return None if self.frame.empty else self.frame.iloc[-1]
+        """The most recent bar with a real close.
+
+        Not simply the last row: yfinance can return a trailing row with a
+        NaN close — most often "today" during or shortly after market
+        hours, before the day's bar has actually settled. `float('nan')`
+        is a perfectly valid Python float, so a quote built from it
+        constructs without error on this side; it's the JSON on the wire
+        that turns NaN into `null`, which then fails `Quote.price`'s
+        `float` (not `float | None`) validation on the client — a quote
+        either has a real, current price or it does not exist, never a
+        null one pretending otherwise. Skipping straight to the previous
+        settled bar keeps that contract instead of shipping a value that
+        cannot survive its own trip across the wire.
+        """
+        valid = self._valid_closes
+        return None if valid.empty else valid.iloc[-1]
 
     @property
     def previous_close(self) -> float | None:
-        if len(self.frame) < 2:
+        valid = self._valid_closes
+        if len(valid) < 2:
             return None
-        return float(self.frame.iloc[-2]["close"])
+        return float(valid.iloc[-2]["close"])
 
     def to_quote(
         self, currency: str | None = None, *, spark_points: int | None = None
@@ -189,16 +210,23 @@ class PriceHistory(BaseModel):
         last = self.latest
         if last is None:
             return None
-        index_ts = self.frame.index[-1]
+        # `last.name` — a Series sliced from a DataFrame row keeps that
+        # row's index value as its name — not `self.frame.index[-1]`,
+        # which would silently point at a later (skipped, NaN-close) row
+        # once `latest` has fallen back to an earlier one.
+        index_ts = last.name
         as_of = index_ts.to_pydatetime() if hasattr(index_ts, "to_pydatetime") else utcnow()
-        spark = self.frame["close"].tail(spark_points).tolist() if spark_points else None
+        # dropna(), not tail() directly on the raw column: the same
+        # trailing-NaN row `latest` skips would otherwise still land in
+        # the sparkline as its final, most-eye-catching point.
+        spark = self.frame["close"].dropna().tail(spark_points).tolist() if spark_points else None
         return Quote(
             symbol=self.symbol,
             price=float(last["close"]),
             previous_close=self.previous_close,
-            open=float(last["open"]),
-            high=float(last["high"]),
-            low=float(last["low"]),
+            open=float(last["open"]) if pd.notna(last["open"]) else None,
+            high=float(last["high"]) if pd.notna(last["high"]) else None,
+            low=float(last["low"]) if pd.notna(last["low"]) else None,
             volume=int(last["volume"]) if pd.notna(last["volume"]) else None,
             currency=currency,
             as_of=as_of,
