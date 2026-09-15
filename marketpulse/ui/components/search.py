@@ -23,13 +23,30 @@ from marketpulse.ui.components.state import show_error
 _USEFUL_TYPES = {"EQUITY", "ETF", "INDEX", "CRYPTOCURRENCY", "CURRENCY"}
 
 
+#: Minimum characters before a name search fires. An exact ticker (the
+#: branch above this gate) still resolves on its first keystroke — this
+#: only holds back the fallback name-search API call, which used to fire
+#: on every character typed, including the first.
+_MIN_QUERY_LENGTH = 2
+
+
+@st.fragment
 def symbol_input(client: MarketPulseClient, *, key: str = "symbol_query") -> str | None:
     """Render the search box and return the chosen symbol, if any.
 
-    The selection lives in session state so it survives the auto-refresh
-    rerun; without that the page would reset to the default ticker every
-    refresh interval.
+    Fragment-scoped: a keystroke here reruns only this box and its
+    candidate list — not the chart, news and AI panel below, which used to
+    refetch on every character typed while narrowing a company name. Those
+    stay exactly as they were, showing the last confirmed symbol, until a
+    *different* symbol is actually resolved — at which point st.rerun()
+    (a full, unscoped rerun, deliberately not `scope="fragment"`) escalates
+    so the rest of the page picks it up. Narrowing a query never does.
+
+    The selection lives in session state so it also survives a Markets-page
+    fragment refresh elsewhere in the app, which never touches this page.
     """
+    previous = st.session_state.get("symbol")
+
     query = st.text_input(
         "Search a company or enter a ticker",
         value=st.session_state.get(key, "AAPL"),
@@ -38,15 +55,21 @@ def symbol_input(client: MarketPulseClient, *, key: str = "symbol_query") -> str
     ).strip()
 
     if not query:
-        return st.session_state.get("symbol")
+        return previous
 
     st.session_state[key] = query
 
     # An exact ticker needs no lookup. Anything with a space is a name.
     if is_valid_symbol(query) and " " not in query:
-        st.session_state["symbol"] = query.upper()
+        resolved = query.upper()
+        st.session_state["symbol"] = resolved
         _offer_alternatives(client, query)
-        return st.session_state["symbol"]
+        if resolved != previous:
+            st.rerun()
+        return resolved
+
+    if len(query) < _MIN_QUERY_LENGTH:
+        return previous
 
     try:
         matches = [
@@ -56,13 +79,13 @@ def symbol_input(client: MarketPulseClient, *, key: str = "symbol_query") -> str
         ]
     except MarketPulseClientError as exc:
         show_error(exc, context="Search")
-        return st.session_state.get("symbol")
+        return previous
 
     if not matches:
         # A well-formed query that matched nothing — distinct from a search
         # that failed, which took the branch above.
         st.info(f"No symbols found for “{query}”. Try a company name or an exact ticker.")
-        return st.session_state.get("symbol")
+        return previous
 
     labels = [m.label for m in matches]
     chosen = st.radio(
@@ -72,8 +95,11 @@ def symbol_input(client: MarketPulseClient, *, key: str = "symbol_query") -> str
         key=f"{key}_match",
         label_visibility="collapsed",
     )
-    st.session_state["symbol"] = matches[chosen].symbol
-    return st.session_state["symbol"]
+    resolved = matches[chosen].symbol
+    st.session_state["symbol"] = resolved
+    if resolved != previous:
+        st.rerun()
+    return resolved
 
 
 def _offer_alternatives(client: MarketPulseClient, ticker: str) -> None:

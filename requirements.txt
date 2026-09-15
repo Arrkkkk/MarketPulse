@@ -182,10 +182,6 @@ starlette==1.6.0
     #   fastapi
     #   streamlit
 streamlit==1.63.0
-    # via
-    #   marketpulse
-    #   streamlit-autorefresh
-streamlit-autorefresh==1.0.1
     # via marketpulse
 tenacity==9.1.4
     # via google-genai

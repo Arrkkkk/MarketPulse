@@ -10,12 +10,34 @@ from marketpulse.ui.components.state import freshness_caption
 
 SNAPSHOT_COLUMNS = 4
 
+#: Session key holding the last price seen per tile, so a refresh can flash
+#: what changed rather than just silently showing new numbers.
+_LAST_PRICES = "_snapshot_last_prices"
+
 
 def _direction_slug(change: float | None) -> str:
     """'up', 'down', or 'flat' for a zero/unknown change — never guess a sign."""
     if not change:
         return "flat"
     return "up" if change > 0 else "down"
+
+
+def _flash_direction(track_key: str, price: float) -> str | None:
+    """'up', 'down', or None if unchanged or first sight, from one refresh
+    to the next — independent of the tile's day-over-day rail colour above.
+
+    First sight returns None deliberately: flashing every tile on initial
+    load would signal movement that never happened. `track_key` is a plain
+    identity (symbol or coin id) rather than the CSS `key`, which encodes
+    today's direction and would otherwise change identity the moment a
+    price crosses its previous close.
+    """
+    previous: dict[str, float] = st.session_state.setdefault(_LAST_PRICES, {})
+    before = previous.get(track_key)
+    previous[track_key] = price
+    if before is None or before == price:
+        return None
+    return "up" if price > before else "down"
 
 
 def _format_price(value: float) -> str:
@@ -47,15 +69,25 @@ def _format_large(value: float) -> str:
     return f"{value:,.0f}"
 
 
-def _price_tile(*, key: str, label: str, value: str, delta: str | None) -> None:
+def _price_tile(
+    *, css_key: str, track_key: str, label: str, value: str, raw_price: float, delta: str | None
+) -> None:
     """A bordered surface with a rail on the edge that moved.
 
     st.metric stays the actual content — its own arrow glyph and signed
     number are the accessible, colour-independent half of the signal. The
-    rail (marketpulse.css, keyed off `key`) is reinforcement, never the only
-    signal: direction is never colour alone anywhere in this app.
+    rail (marketpulse.css, keyed off `css_key`) is reinforcement, never the
+    only signal.
+
+    A refresh that actually changes the price also gets a brief flash wash
+    — the one animation in this app that is pure information rather than
+    decoration: on a grid of two dozen numbers, "what just changed" is
+    otherwise unanswerable without staring at all of them at once.
     """
-    with st.container(border=True, key=key):
+    flash = _flash_direction(track_key, raw_price)
+    with st.container(border=True, key=css_key):
+        if flash:
+            st.markdown(f'<span class="mp-flash mp-flash--{flash}"></span>', unsafe_allow_html=True)
         st.metric(label=label, value=value, delta=delta)
 
 
@@ -77,9 +109,11 @@ def stock_snapshots(quotes: list[Quote], limit: int) -> None:
             # number than one tagged with the wrong currency.
             label = f"{quote.symbol} ({quote.currency})" if quote.currency else quote.symbol
             _price_tile(
-                key=f"tile-{_direction_slug(change)}-stock-{quote.symbol}",
+                css_key=f"tile-{_direction_slug(change)}-stock-{quote.symbol}",
+                track_key=f"stock-{quote.symbol}",
                 label=label,
                 value=_format_price(quote.price),
+                raw_price=quote.price,
                 delta=delta,
             )
 
@@ -93,9 +127,11 @@ def crypto_snapshots(quotes: list[CryptoQuote], limit: int) -> None:
     for i, quote in enumerate(shown):
         with columns[i % SNAPSHOT_COLUMNS]:
             _price_tile(
-                key=f"tile-{_direction_slug(quote.change_percent_24h)}-crypto-{quote.coin_id}",
+                css_key=f"tile-{_direction_slug(quote.change_percent_24h)}-crypto-{quote.coin_id}",
+                track_key=f"crypto-{quote.coin_id}",
                 label=f"{quote.display_name} (USD)",
                 value=f"${_format_price(quote.price)}",
+                raw_price=quote.price,
                 delta=(
                     f"{quote.change_percent_24h:+.2f}%"
                     if quote.change_percent_24h is not None

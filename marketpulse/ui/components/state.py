@@ -91,16 +91,18 @@ def skeleton_metrics(count: int = 4, columns: int = 4) -> None:
 
     A blank page reads as "broken" and a spinner alone gives no sense of
     what is coming. Tiles in the shape of the real content mean the layout
-    does not jump when data arrives.
+    does not jump when data arrives. The `mp-skeleton` sweep (marketpulse.css)
+    is what tells someone this is still loading rather than stuck — the
+    shape alone doesn't communicate that.
     """
     cols = st.columns(columns)
     for i in range(count):
         with cols[i % columns]:
             st.markdown(
                 "<div style='padding:0.5rem 0'>"
-                "<div style='height:0.75rem;width:45%;border-radius:4px;"
+                "<div class='mp-skeleton' style='height:0.75rem;width:45%;border-radius:4px;"
                 "background:currentColor;opacity:0.10;margin-bottom:0.5rem'></div>"
-                "<div style='height:1.6rem;width:75%;border-radius:4px;"
+                "<div class='mp-skeleton' style='height:1.6rem;width:75%;border-radius:4px;"
                 "background:currentColor;opacity:0.16'></div>"
                 "</div>",
                 unsafe_allow_html=True,
@@ -110,7 +112,7 @@ def skeleton_metrics(count: int = 4, columns: int = 4) -> None:
 def skeleton_chart(height_rem: float = 20.0) -> None:
     """A placeholder block the size of the chart that is loading."""
     st.markdown(
-        f"<div style='height:{height_rem}rem;border-radius:8px;"
+        f"<div class='mp-skeleton' style='height:{height_rem}rem;border-radius:8px;"
         "background:currentColor;opacity:0.07'></div>",
         unsafe_allow_html=True,
     )

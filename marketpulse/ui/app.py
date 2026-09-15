@@ -16,7 +16,6 @@ lives behind the API.
 from __future__ import annotations
 
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 
 from marketpulse.client import MarketPulseClientError
 from marketpulse.ui.backend import get_client
@@ -26,11 +25,14 @@ from marketpulse.ui.theme import inject_styles
 
 def _sidebar() -> None:
     st.sidebar.header("Settings")
-    interval = st.sidebar.slider("Auto-refresh (seconds)", 30, 300, 60, 30)
-
-    # Client-side timer. The original parked a server thread in
-    # time.sleep() per session, which capped concurrency at a handful.
-    st_autorefresh(interval=interval * 1000, key="marketpulse_refresh")
+    # Read by the Markets page's own st.fragment(run_every=...) — see
+    # ui/pages/markets.py. No global timer lives here any more: the old
+    # st_autorefresh reran the *entire* app on this interval regardless of
+    # which page was open, discarding a chart mid-read, a symbol you'd
+    # searched, or a streamed AI analysis on the Stocks page every time it
+    # fired. A fragment on the one page that actually wants a clock fixes
+    # that structurally rather than by remembering not to break it.
+    st.sidebar.slider("Auto-refresh (seconds)", 30, 300, 60, 30, key="refresh_interval")
 
     with st.sidebar.expander("Service status"):
         try:
