@@ -21,6 +21,62 @@ uv run uvicorn marketpulse.api.main:app --reload    # :8000
 uv run streamlit run app.py                         # :8501
 ```
 
+## Google Cloud Run
+
+`scripts/deploy_cloud_run.sh` is committed and configured — the Cloud Run
+equivalent of `fly.toml`, since Cloud Run has no single declarative file
+for "two services, one private, one public, from one image."
+
+One-time setup:
+
+```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
+  secretmanager.googleapis.com cloudbuild.googleapis.com
+```
+
+Then, from the repo root:
+
+```bash
+GEMINI_API_KEY=... NEWS_API_KEY=... MARKETAUX_API_KEY=... \
+  ./scripts/deploy_cloud_run.sh
+```
+
+Every credential is optional, same rule as everywhere else in this project
+— an unset one is skipped rather than deployed empty, and the script says
+so. It builds straight from the committed `Dockerfile` via Cloud Build
+(`--source .`; no registry to configure by hand), deploys the API and UI
+as separate Cloud Run services from that one image, and prints the UI's
+public URL when done.
+
+**How the API stays private, on a platform with no private-network
+primitive the way Fly has one.** The API service deploys with
+`--no-allow-unauthenticated`: Cloud Run's own front end rejects any caller
+without a valid Google-signed ID token before the request reaches FastAPI
+at all. The UI is the one caller that's supposed to succeed, so it attaches
+that token itself — see `marketpulse/client/client.py`'s
+`_cloud_run_id_token()`, which activates only for an `https://` base URL
+and fails silently (no auth header, same as every other optional feature
+here) anywhere that isn't actually Cloud Run. The script's last step grants
+the UI's service account the `roles/run.invoker` permission the token needs
+to actually be honoured — Cloud Run does not infer trust between two
+services from them sharing a project or a service account.
+
+`MARKETPULSE_TRUST_PROXY=1` is set for the same reason as on Fly: Cloud
+Run's front end also terminates TLS and sets `X-Forwarded-For`, so the rate
+limiter can trust it. Same caveat — never set this anywhere the service is
+reachable by a route that bypasses that front end.
+
+**Cache is per-instance, not per-deployment.** Cloud Run gives each
+container instance a writable filesystem, so the SQLite cache tier works
+exactly as written with no code change — but it lives only as long as that
+instance does. A new instance (redeploy, scale-from-zero, or Cloud Run
+recycling one after a period of no traffic) starts cold, unlike Fly's
+mounted volume, which survives all three. Traffic light enough to scale to
+zero between visits will therefore pay the cold-fetch cost more often here
+than on Fly.
+
 ## Fly.io
 
 `fly.toml` is committed and configured.

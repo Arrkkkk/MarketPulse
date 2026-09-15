@@ -38,6 +38,37 @@ DEFAULT_BASE_URL = "http://localhost:8000"
 DEFAULT_TIMEOUT = 30.0
 
 
+def _cloud_run_id_token(audience: str) -> str | None:
+    """A Google-signed ID token scoped to `audience`, or None.
+
+    Exists for exactly one deployment shape: the API deployed as a private
+    Cloud Run service (`--no-allow-unauthenticated`), reachable only by a
+    caller presenting a token Cloud Run's own front end verifies before a
+    request ever reaches the FastAPI process — the Cloud Run equivalent of
+    what Fly's private network and Compose's internal-only networking give
+    for free. See docs/deploying.md's Cloud Run section.
+
+    Every other shape gets None: local dev, Docker Compose, Fly, or a Cloud
+    Run API deployed with --allow-unauthenticated. The metadata-server call
+    this makes can only succeed on Google's own infrastructure, so off it
+    this fails fast — exactly as harmless as an absent API key elsewhere in
+    this project: a feature quietly not activated, not an error. Imported
+    lazily rather than at module level so the one process that never talks
+    to Cloud Run (a local Streamlit session, most of the time) never pays
+    to import a Google Cloud library it will not use.
+    """
+    if not audience.startswith("https://"):
+        return None
+    try:
+        import google.auth.transport.requests
+        import google.oauth2.id_token
+
+        request = google.auth.transport.requests.Request()
+        return google.oauth2.id_token.fetch_id_token(request, audience)
+    except Exception:  # noqa: BLE001 — any failure here means "not applicable"
+        return None
+
+
 class MarketPulseClientError(Exception):
     """A request failed, or the service reported an error.
 
@@ -92,7 +123,11 @@ class MarketPulseClient:
         """
         self.base_url = base_url.rstrip("/")
         self._owns_http = http_client is None
-        self._http = http_client or httpx.Client(base_url=self.base_url, timeout=timeout)
+        if http_client is None:
+            token = _cloud_run_id_token(self.base_url)
+            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            http_client = httpx.Client(base_url=self.base_url, timeout=timeout, headers=headers)
+        self._http = http_client
 
     def close(self) -> None:
         # An injected client belongs to whoever created it.
