@@ -16,7 +16,11 @@ fix this file.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
+
+_STYLESHEET = Path(__file__).resolve().parent.parent.parent / "static" / "css" / "marketpulse.css"
 
 #: Price rising. Reserved for that meaning alone — never decorative.
 UP = "#0D7049"
@@ -50,11 +54,29 @@ def direction_color(value: float | None, *, dark: bool = False) -> str | None:
 def inject_styles() -> None:
     """Load the one hand-written stylesheet.
 
-    A <link> to a static file, not an inline <style> block: the browser
-    fetches and caches it like any other asset instead of re-parsing a
-    string on every rerun. Called unconditionally on every run rather than
-    cached — Streamlit rebuilds the script's output tree each rerun, and a
-    cached no-op here would mean the tag is only ever emitted once and then
-    silently drops out of that tree on every rerun after the first.
+    st.markdown(unsafe_allow_html=True) with a raw <style> block — the same
+    mechanism ui/components/state.py already uses for its skeleton
+    placeholders, extended to a full stylesheet rather than one more
+    injection idiom for this codebase to carry.
+
+    Two alternatives were tried first and both looked fine but did nothing,
+    which is why this is verified against a real rendered page (computed
+    style, not just "no exception") rather than trusted on the API
+    reading right:
+
+    - `st.html(f'<link rel="stylesheet" href="...">')` — st.html content
+      passes through DOMPurify, whose default allowlist drops <link>
+      entirely.
+    - `st.html(Path("...css"))` — st.html's own documented behaviour for a
+      CSS file Path: wrap it in <style> tags. Confirmed correct at the
+      Python level (AppTest shows the right <style> element), but that
+      element never appeared in the live DOM — style-only st.html content
+      is routed to what Streamlit calls an "event container", which this
+      version does not render at all.
+
+    Called unconditionally on every run rather than cached — Streamlit
+    rebuilds the script's output tree each rerun, and a cached no-op here
+    would mean the styles are only ever emitted once and then silently drop
+    out of that tree on every rerun after the first.
     """
-    st.html('<link rel="stylesheet" href="app/static/css/marketpulse.css">')
+    st.markdown(f"<style>{_STYLESHEET.read_text()}</style>", unsafe_allow_html=True)

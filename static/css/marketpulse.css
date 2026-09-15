@@ -2,9 +2,18 @@
  *
  * Everything reachable through .streamlit/config.toml lives there instead.
  * This file exists only for the handful of things the theme-token layer
- * cannot reach, and is anchored to `data-testid` attributes rather than
- * Streamlit's internal class names, which are not a stable contract across
- * minor versions.
+ * cannot reach, and is anchored to two things Streamlit documents as a
+ * stable contract: `data-testid` attributes, and the `st-key-<key>` class
+ * a container gets when given an explicit `key=` (the `key` parameter's
+ * documented purpose is exactly this — "it will be used as a CSS class
+ * name prefixed with st-key-"). Neither is an internal implementation
+ * detail like the `st-emotion-cache-*` classes Streamlit generates
+ * alongside them, which churn across releases and are never targeted here.
+ *
+ * `!important` appears where a rule needs to win over Streamlit's own
+ * generated styling on the same element (verified against the real
+ * rendered DOM, not assumed) — never to paper over a specificity fight of
+ * this file's own making.
  *
  * Loaded once by marketpulse.ui.theme.inject_styles() as a <link>, so it is
  * cached by the browser like any other static asset rather than re-parsed
@@ -44,5 +53,56 @@
 @media (prefers-color-scheme: dark) {
   [data-testid="stAppViewContainer"] :focus-visible {
     outline-color: #4badc4;
+  }
+}
+
+/* Snapshot tiles (ui/components/panels.py): a 2px rail on the direction
+ * that moved, so the surface itself carries the signal a glance needs —
+ * never the only signal; st.metric's own arrow glyph and signed number
+ * still do the accessible, colour-independent half of the job. */
+[class*="st-key-tile-up-"] {
+  border-left: 2px solid #0d7049 !important;
+}
+[class*="st-key-tile-down-"] {
+  border-left: 2px solid #a8281f !important;
+}
+@media (prefers-color-scheme: dark) {
+  [class*="st-key-tile-up-"] {
+    border-left-color: #35b37e !important;
+  }
+  [class*="st-key-tile-down-"] {
+    border-left-color: #e5695c !important;
+  }
+}
+
+/* AI verdict band (ui/components/analysis.py): a faint tint by sentiment,
+ * so the verdict reads before the words do. Kept faint deliberately — at
+ * body-text contrast this would fight the text sitting on it; the glyph,
+ * label and signed confidence number already carry the meaning without
+ * colour, this is reinforcement, not the message. */
+[class*="st-key-verdict-up-"] {
+  background: rgba(13, 112, 73, 0.08) !important;
+}
+[class*="st-key-verdict-down-"] {
+  background: rgba(168, 40, 31, 0.08) !important;
+}
+[class*="st-key-verdict-neutral-"] {
+  background: rgba(122, 136, 144, 0.1) !important;
+}
+[class*="st-key-verdict-mixed-"] {
+  background: rgba(138, 90, 0, 0.08) !important;
+}
+@media (prefers-color-scheme: dark) {
+  [class*="st-key-verdict-up-"] {
+    background: rgba(53, 179, 126, 0.14) !important;
+  }
+  [class*="st-key-verdict-down-"] {
+    background: rgba(229, 105, 92, 0.14) !important;
+  }
+  [class*="st-key-verdict-neutral-"] {
+    background: rgba(108, 123, 131, 0.16) !important;
+  }
+  [class*="st-key-verdict-mixed-"] {
+    background: rgba(214, 164, 74, 0.14) !important;
   }
 }

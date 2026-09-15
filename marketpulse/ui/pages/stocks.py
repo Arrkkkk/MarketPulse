@@ -62,8 +62,7 @@ if frame_bars:
         profile,
     )
 
-charts.candlestick(history, currency)
-charts.volume(history)
+charts.price_chart(history, currency)
 state.freshness_caption(history.as_of, history.cached)
 
 st.markdown("##### Recent news")
