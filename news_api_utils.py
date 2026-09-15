@@ -1,10 +1,12 @@
-import os
 import requests
 from datetime import datetime, timedelta
 
-# Access API keys from system environment variables
-NEWS_API_KEY = os.environ.get("NEWS_API_KEY")
-MARKETAUX_API_KEY = os.environ.get("MARKETAUX_API_KEY")
+from marketpulse.config import get_settings, secret
+
+settings = get_settings()
+
+NEWS_API_KEY = secret(settings.NEWS_API_KEY)
+MARKETAUX_API_KEY = secret(settings.MARKETAUX_API_KEY)
 
 
 def _fetch_news_from_newsapi(query, language='en', page_size=5):

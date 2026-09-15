@@ -1,23 +1,18 @@
-import os
 from pycoingecko import CoinGeckoAPI
-# REMOVED: from alpha_vantage.timeseries import TimeSeries # THIS LINE WAS THE PROBLEM
 import google.generativeai as genai
 import pandas as pd
-import time
-from datetime import datetime, timedelta
+import yfinance as yf
 
-# ADDED (or ensure it's there):
-import yfinance as yf  # Import yfinance for stock data functions
+from marketpulse.config import get_settings, secret
 
-# --- API Key Configuration ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+settings = get_settings()
 
 # Configure Gemini API
 gemini_model = None
-if GEMINI_API_KEY:
+if settings.gemini_enabled:
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+        genai.configure(api_key=secret(settings.GEMINI_API_KEY))
+        gemini_model = genai.GenerativeModel(settings.GEMINI_MODEL)
     except Exception as e:
         print(f"Error configuring Gemini API: {e}. Check GEMINI_API_KEY.")
         gemini_model = None
@@ -153,7 +148,7 @@ if __name__ == "__main__":
     stock_data_max = get_stock_data('IBM', period='max')
     print(stock_data_max.tail())
 
-    if GEMINI_API_KEY and gemini_model:
+    if gemini_model:
         print("\n--- Gemini Insights ---")
         insights_prompt = "What are the current trends in the cryptocurrency market? (Summarize in 50 words)"
         insights = get_gemini_insights(insights_prompt)

@@ -5,9 +5,10 @@ from api_utils import get_crypto_prices, get_crypto_historical_data, get_stock_d
     analyze_news_with_gemini
 from news_api_utils import get_top_news
 import time
-from datetime import datetime, timedelta
+import re
+from datetime import datetime
 import yfinance as yf
-import re  # Import the regex module
+from streamlit_autorefresh import st_autorefresh
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(layout="wide", page_title="Market Tracker Dashboard", initial_sidebar_state="expanded")
@@ -21,6 +22,13 @@ view_mode = st.sidebar.radio("Select Market Type", ("Cryptocurrencies", "Stocks"
 
 st.sidebar.header("Settings")
 update_interval = st.sidebar.slider("Data Update Interval (seconds)", 30, 300, 60, 30)
+
+# Refresh from the browser, not from the server. The previous approach — a
+# `time.sleep(update_interval); st.rerun()` at the bottom of this script —
+# parked one server thread per open session for the lifetime of that session,
+# so concurrent users saturated Streamlit's thread pool. st_autorefresh emits
+# a client-side timer instead: the server handles the rerun and goes idle.
+st_autorefresh(interval=update_interval * 1000, key="marketpulse_refresh")
 
 # --- Session State for Caching Data and UI States ---
 if 'stock_data_cache' not in st.session_state:
@@ -83,8 +91,9 @@ def fetch_all_data_cached_and_handled():
     common_stock_symbols_for_overview = [
         'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'SPY', 'NFLX', 'META',
         'RELIANCE.NS', '0005.HK', 'IBM', 'JPM', 'XOM', 'GS', 'BAC', 'KO', 'PEP',
-        'DIS', 'NKE', 'V', 'PG', 'COST', 'TCS.NS', 'HDFCBANK.NS', 'BARC.L', 'SHEL.L', 'DAI.DE', 'TM.TO'
-        # Added more global examples
+        'DIS', 'NKE', 'V', 'PG', 'COST', 'TCS.NS', 'HDFCBANK.NS', 'BARC.L', 'SHEL.L', 'MBG.DE', 'RY.TO'
+        # MBG.DE replaces DAI.DE and RY.TO replaces TM.TO — both of the originals
+        # are delisted and 404 from Yahoo on every cold start.
     ]
     stock_data_temp = {}
 
@@ -173,7 +182,7 @@ with col_snap_buttons2:
     if st.session_state.show_more_snapshots > 0:
         if st.button("Show Less Snapshots ◀️", key="show_less_button"):
             st.session_state.show_more_snapshots -= 1
-            st.experimental_rerun()
+            st.rerun()
 
 st.markdown("---")
 
@@ -202,7 +211,7 @@ if view_mode == "Cryptocurrencies":
                 "Last Updated (UTC)": last_updated
             })
         crypto_df = pd.DataFrame(crypto_data_list)
-        st.dataframe(crypto_df, use_container_width=True, hide_index=True)
+        st.dataframe(crypto_df, width='stretch', hide_index=True)
     else:
         st.info("No cryptocurrency data available to display in overview.")
 
@@ -231,7 +240,7 @@ if view_mode == "Cryptocurrencies":
                 data=[go.Scatter(x=history_df.index, y=history_df['price'], mode='lines', name='Price')])
             fig_line.update_layout(title=f"{selected_crypto_name} Price Over Time (USD)", xaxis_title="Date",
                                    yaxis_title="Price (USD)")
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_line, width='stretch')
 
             st.markdown(f"### Recent {selected_crypto_name} News & AI Analysis")
 
@@ -293,7 +302,7 @@ elif view_mode == "Stocks":
                     "Last Updated": data.index[-1].strftime('%Y-%m-%d')
                 })
         stock_df = pd.DataFrame(stock_summary_data)
-        st.dataframe(stock_df, use_container_width=True, hide_index=True)
+        st.dataframe(stock_df, width='stretch', hide_index=True)
     else:
         st.info("No stock data available to display in overview. Initial fetch may still be in progress.")
 
@@ -334,7 +343,7 @@ elif view_mode == "Stocks":
     }
 
     suffix_df = pd.DataFrame(list(global_suffixes.items()), columns=['Country/Market', 'Suffix'])
-    st.dataframe(suffix_df, hide_index=True, use_container_width=True)
+    st.dataframe(suffix_df, hide_index=True, width='stretch')
 
     search_ticker = st.text_input("Enter Stock Ticker:", value=st.session_state.searched_stock_ticker,
                                   help="e.g. AAPL, GOOGL, RELIANCE.NS, 0005.HK").strip().upper()
@@ -387,25 +396,7 @@ elif view_mode == "Stocks":
 
                     full_summary_text = ticker_info.get('longBusinessSummary') or ticker_info.get('description')
                     if full_summary_text:
-                        key_segments = [
-                            "Oil to Chemicals", "Oil and Gas", "Retail", "Digital Services",
-                            "Material and Composites", "Renewables", "Financial Services",
-                            "hydrocarbon exploration and production", "petroleum products",
-                            "petrochemicals", "textile", "retail", "digital", "material and composites",
-                            "renewables", "financial services businesses",
-                            "yarns, fabrics, apparel, and auto furnishings",
-                            "crude oil and natural gas",
-                            "digital television, gaming, broadband, and telecommunication services",
-                            "non-banking financial and insurance broking services", "news and entertainment platforms",
-                            "highway hospitality and fleet management services"
-                        ]
-
-                        formatted_summary = full_summary_text
-                        for segment in key_segments:
-                            formatted_summary = re.sub(r'\b(' + re.escape(segment) + r')\b', r'**\1**',
-                                                       formatted_summary, flags=re.IGNORECASE)
-
-                        paragraphs = re.split(r'\.\s*(?=[A-Z])|\n\s*\n', formatted_summary)
+                        paragraphs = re.split(r'\.\s*(?=[A-Z])|\n\s*\n', full_summary_text)
                         st.markdown("##### Business Summary:")
                         for p in paragraphs:
                             if p.strip():
@@ -474,12 +465,12 @@ elif view_mode == "Stocks":
                                                  close=stock_data['close'])])
             fig.update_layout(xaxis_rangeslider_visible=False, title=f"{display_ticker} Candlestick Chart",
                               xaxis_title="Date", yaxis_title=f"Price ({currency_display})")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
             st.markdown(f"### Trading Volume for {display_ticker}")
             fig_vol = go.Figure(data=[go.Bar(x=stock_data.index, y=stock_data['volume'])])
             fig_vol.update_layout(title=f"{display_ticker} Trading Volume", xaxis_title="Date", yaxis_title="Volume")
-            st.plotly_chart(fig_vol, use_container_width=True)
+            st.plotly_chart(fig_vol, width='stretch')
 
             st.markdown(f"### Recent {display_ticker} News & AI Analysis")
 
@@ -537,6 +528,3 @@ if st.button("Get General AI Insights", key="get_general_insights_btn"):
             st.write(general_insights)
     else:
         st.warning("Please enter a prompt for general AI insights.")
-
-time.sleep(update_interval)
-st.rerun()

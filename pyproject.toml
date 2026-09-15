@@ -1,0 +1,32 @@
+[project]
+name = "marketpulse"
+version = "0.1.0"
+description = "Real-time stock and crypto market dashboard with AI-driven news analysis"
+readme = "README.md"
+requires-python = ">=3.11"
+
+# Direct dependencies only. Transitive versions are pinned in uv.lock
+# (`uv sync`) — do not add indirect packages here.
+dependencies = [
+    "streamlit>=1.47,<2",
+    "streamlit-autorefresh>=1.0.1",
+    "pandas>=2.2,<3",
+    "plotly>=6.0,<7",
+    "yfinance>=0.2.65,<0.3",
+    "pycoingecko>=3.2,<4",
+    "google-generativeai>=0.8.5,<0.9",
+    "requests>=2.32,<3",
+    "pydantic-settings>=2.4,<3",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
