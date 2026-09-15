@@ -257,3 +257,44 @@ def test_client_works_as_a_context_manager():
     app = create_app()
     with MarketPulseClient(base_url="http://testserver", http_client=TestClient(app)) as client:
         assert client.health() is True
+
+
+# --- Cloud Run identity token ----------------------------------------------
+#
+# See docs/deploying.md: a private Cloud Run API service is reachable only
+# by a caller presenting a Google-signed ID token. These assert the two
+# things that matter — it never fires off Google's infrastructure, and a
+# real token becomes a real Authorization header — without a metadata
+# server, which does not exist in a test environment.
+
+
+def test_cloud_run_auth_is_skipped_for_a_plain_http_url():
+    """Local dev, Docker Compose and Fly all use http:// base URLs — no
+    metadata-server call should even be attempted for them."""
+    from marketpulse.client.client import _cloud_run_id_token
+
+    assert _cloud_run_id_token("http://localhost:8000") is None
+
+
+def test_cloud_run_auth_fails_closed_off_google_infrastructure():
+    """An https:// URL that is not actually a Cloud Run deployment (or any
+    environment without metadata-server credentials, like this one) must
+    not raise — the whole point is that this degrades to "no auth header"
+    silently, the same way an absent API key does elsewhere in this
+    project."""
+    from marketpulse.client.client import _cloud_run_id_token
+
+    assert _cloud_run_id_token("https://api-example.a.run.app") is None
+
+
+def test_cloud_run_auth_header_is_attached_when_a_token_is_available(monkeypatch):
+    """The one thing this module cannot exercise for real (there is no
+    metadata server here): given a token, the client sends it."""
+    import marketpulse.client.client as client_module
+
+    monkeypatch.setattr(client_module, "_cloud_run_id_token", lambda audience: "fake-token")
+    client = MarketPulseClient(base_url="https://api-example.a.run.app")
+    try:
+        assert client._http.headers["authorization"] == "Bearer fake-token"
+    finally:
+        client.close()
