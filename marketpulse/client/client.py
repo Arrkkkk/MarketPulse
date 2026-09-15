@@ -120,7 +120,17 @@ class MarketPulseClient:
 
         (httpx.ASGITransport is not usable here: it is async-only, so a
         synchronous httpx.Client cannot close it.)
+
+        A scheme is added to `base_url` if one is missing. Render's
+        Blueprint wiring (`fromService`, `property: hostport`) hands the UI
+        service a bare "host:port" for the private API service, with no
+        `http://` — there is no property that includes one. Every other
+        deployment shape already supplies a full URL (Fly's
+        `http://x.internal:8000`, Cloud Run's `https://...run.app`, plain
+        `http://localhost:8000` locally), so this is a no-op for them.
         """
+        if "://" not in base_url:
+            base_url = f"http://{base_url}"
         self.base_url = base_url.rstrip("/")
         self._owns_http = http_client is None
         if http_client is None:

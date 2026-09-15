@@ -259,6 +259,29 @@ def test_client_works_as_a_context_manager():
         assert client.health() is True
 
 
+# --- base URL scheme normalisation ------------------------------------------
+#
+# Render's Blueprint wiring hands the UI a bare "host:port" for the private
+# API service — see docs/deploying.md and render.yaml. No render.yaml
+# `fromService` property includes a scheme, so the client adds one itself.
+
+
+def test_a_bare_host_and_port_is_given_an_http_scheme():
+    client = MarketPulseClient(base_url="marketpulse-api-ab12:8000")
+    try:
+        assert client.base_url == "http://marketpulse-api-ab12:8000"
+    finally:
+        client.close()
+
+
+def test_an_existing_scheme_is_left_alone():
+    client = MarketPulseClient(base_url="https://api.example.com")
+    try:
+        assert client.base_url == "https://api.example.com"
+    finally:
+        client.close()
+
+
 # --- Cloud Run identity token ----------------------------------------------
 #
 # See docs/deploying.md: a private Cloud Run API service is reachable only
