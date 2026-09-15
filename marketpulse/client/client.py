@@ -306,6 +306,13 @@ def bars_to_frame(response: HistoryResponse) -> pd.DataFrame:
             "close": [b.c for b in response.bars],
             "volume": [b.v for b in response.bars],
         },
-        index=pd.DatetimeIndex([b.t for b in response.bars], name="date"),
+        # `utc=True`, not a bare DatetimeIndex: yfinance's bar timestamps are
+        # localized to the exchange timezone, so a year of daily bars carries
+        # two different fixed UTC offsets across a DST transition (e.g. EST
+        # vs EDT). Each bar survives the JSON round trip as its own aware
+        # `datetime` with its own fixed-offset tzinfo, and pandas refuses to
+        # infer one index tz from a list mixing those offsets unless told to
+        # normalize to UTC explicitly.
+        index=pd.DatetimeIndex(pd.to_datetime([b.t for b in response.bars], utc=True), name="date"),
     )
     return frame.sort_index()
