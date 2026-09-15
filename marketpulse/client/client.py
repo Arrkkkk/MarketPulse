@@ -30,6 +30,7 @@ from marketpulse.schema.api import (
     OverviewResponse,
     ProfileResponse,
     ReadinessResponse,
+    SearchResponse,
     ServiceInfo,
 )
 
@@ -161,6 +162,9 @@ class MarketPulseClient:
                 max_points=max_points,
             )
         )
+
+    def search(self, query: str, limit: int = 8) -> SearchResponse:
+        return SearchResponse.model_validate(self._get("/v1/search", q=query, limit=limit))
 
     def get_profile(self, symbol: str) -> ProfileResponse:
         return ProfileResponse.model_validate(self._get(f"/v1/profile/{symbol}"))

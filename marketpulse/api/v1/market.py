@@ -16,6 +16,7 @@ from marketpulse.schema.api import (
     HistoryResponse,
     OverviewResponse,
     ProfileResponse,
+    SearchResponse,
     Symbol,
 )
 from marketpulse.schema.exchanges import currency_for_symbol
@@ -84,6 +85,20 @@ def get_history(
     history = service.get_history(symbol, period=period, interval=interval)
     reduced, total = _downsample(history, max_points)
     return HistoryResponse.from_history(reduced, total=total)
+
+
+@router.get("/search", response_model=SearchResponse, summary="Find a ticker by name")
+def search(
+    service: MarketServiceDep,
+    q: str = Query(min_length=1, max_length=64, description="Company name or ticker"),
+    limit: int = Query(8, ge=1, le=20),
+) -> SearchResponse:
+    """Resolve free text to candidate tickers.
+
+    Declared before /profile/{symbol} so the literal path wins over the
+    parameterised one.
+    """
+    return SearchResponse(query=q, matches=service.search(q, limit))
 
 
 @router.get("/profile/{symbol}", response_model=ProfileResponse, summary="Company profile")

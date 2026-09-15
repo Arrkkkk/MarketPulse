@@ -43,6 +43,33 @@ def range_selector(key: str, options: dict[str, str], default: str = "1Y") -> st
     return options[chosen]
 
 
+def _data_table(response: HistoryResponse, currency: str) -> None:
+    """A text alternative to the chart.
+
+    A Plotly canvas is opaque to a screen reader, and "look at the chart" is
+    not an answer for someone who cannot. The same numbers, as a table,
+    behind a disclosure so it costs sighted users nothing.
+    """
+    frame = bars_to_frame(response)
+    if frame.empty:
+        return
+    with st.expander("View as a table"):
+        first, last = frame.iloc[0], frame.iloc[-1]
+        change = (last["close"] - first["close"]) / first["close"] * 100
+        st.caption(
+            f"{response.symbol}: {len(frame):,} bars from "
+            f"{frame.index[0]:%Y-%m-%d} to {frame.index[-1]:%Y-%m-%d}. "
+            f"Close {first['close']:,.2f} to {last['close']:,.2f} {currency} "
+            f"({change:+.2f}%). "
+            f"High {frame['high'].max():,.2f}, low {frame['low'].min():,.2f}."
+        )
+        st.dataframe(
+            frame.sort_index(ascending=False).round(2),
+            width="stretch",
+            height=280,
+        )
+
+
 def candlestick(response: HistoryResponse, currency: str = "USD") -> None:
     frame = bars_to_frame(response)
     if frame.empty:
@@ -73,9 +100,10 @@ def candlestick(response: HistoryResponse, currency: str = "USD") -> None:
 
     if response.count < response.total:
         st.caption(
-            f"Showing {response.count:,} of {response.total:,} bars "
-            f"(downsampled for transfer)."
+            f"Showing {response.count:,} of {response.total:,} bars. Reduced with "
+            f"LTTB, which preserves peaks and troughs rather than sampling evenly."
         )
+    _data_table(response, currency)
 
 
 def line(response: HistoryResponse, label: str, currency: str = "USD") -> None:
@@ -92,6 +120,7 @@ def line(response: HistoryResponse, label: str, currency: str = "USD") -> None:
         yaxis_title=f"Price ({currency})",
     )
     st.plotly_chart(fig, width="stretch")
+    _data_table(response, currency)
 
 
 def volume(response: HistoryResponse) -> None:

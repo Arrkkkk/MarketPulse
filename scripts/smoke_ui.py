@@ -78,8 +78,10 @@ def main() -> int:
 
     ok &= run("click 'Show more'", lambda: click("show more"))
     ok &= run("switch to Cryptocurrencies", lambda: _switch(initial()))
-    ok &= run("search an invalid symbol", lambda: _search(initial(), "!!!!"))
-    ok &= run("search a valid symbol", lambda: _search(initial(), "MSFT"))
+    ok &= run("exact ticker", lambda: _search(initial(), "MSFT"))
+    ok &= run("company name search", lambda: _search(initial(), "reliance"))
+    ok &= run("query matching nothing", lambda: _search(initial(), "zzzznotacompany"))
+    ok &= run("query with punctuation", lambda: _search(initial(), "!!!!"))
 
     print("\n" + ("OK" if ok else "FAILED"))
     return 0 if ok else 1

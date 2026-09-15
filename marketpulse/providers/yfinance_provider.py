@@ -30,7 +30,14 @@ from marketpulse.providers.errors import (
     ProviderUnavailable,
     SymbolNotFound,
 )
-from marketpulse.schema.market import OHLCV_COLUMNS, CompanyProfile, PriceHistory, utcnow
+from marketpulse.schema.exchanges import currency_for_symbol
+from marketpulse.schema.market import (
+    OHLCV_COLUMNS,
+    CompanyProfile,
+    PriceHistory,
+    SymbolMatch,
+    utcnow,
+)
 
 logger = get_logger("providers.yfinance")
 
@@ -67,6 +74,12 @@ def _default_info_fn(symbol: str) -> dict[str, Any]:
     return yf.Ticker(symbol).info
 
 
+def _default_search_fn(query: str, limit: int) -> list[dict[str, Any]]:
+    import yfinance as yf
+
+    return list(yf.Search(query, max_results=limit).quotes or [])
+
+
 def _normalise(frame: pd.DataFrame) -> pd.DataFrame:
     """Lowercase columns, keep OHLCV, sort by date.
 
@@ -98,10 +111,12 @@ class YFinanceProvider:
         history_fn: Callable[..., pd.DataFrame] | None = None,
         download_fn: Callable[..., pd.DataFrame] | None = None,
         info_fn: Callable[[str], dict[str, Any]] | None = None,
+        search_fn: Callable[[str, int], list[dict[str, Any]]] | None = None,
     ) -> None:
         self._history_fn = history_fn or _default_history_fn
         self._download_fn = download_fn or _default_download_fn
         self._info_fn = info_fn or _default_info_fn
+        self._search_fn = search_fn or _default_search_fn
         self._limiter = get_limiter(PROVIDER_NAME, _RATE_PER_SECOND)
 
     # -- helpers ----------------------------------------------------------
@@ -196,3 +211,25 @@ class YFinanceProvider:
             trailing_pe=info.get("trailingPE"),
             dividend_yield=info.get("dividendYield"),
         )
+
+    def search_symbols(self, query: str, limit: int = 8) -> list[SymbolMatch]:
+        """Free-text lookup, so a user can type "reliance" instead of
+        already knowing it is RELIANCE.NS."""
+        raw = self._call(self._search_fn, query, limit) or []
+        matches: list[SymbolMatch] = []
+        for item in raw:
+            symbol = item.get("symbol")
+            if not symbol:
+                continue
+            matches.append(
+                SymbolMatch(
+                    symbol=symbol,
+                    name=item.get("shortname") or item.get("longname"),
+                    exchange=item.get("exchange"),
+                    quote_type=item.get("quoteType"),
+                    currency=currency_for_symbol(symbol),
+                )
+            )
+        # Empty is a real answer for a nonsense query, so it is returned
+        # rather than raised. A transport failure already raised in _call.
+        return matches[:limit]

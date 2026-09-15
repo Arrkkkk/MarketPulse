@@ -101,6 +101,30 @@ class CompanyProfile(BaseModel):
         return normalise_currency(v) if isinstance(v, str) else None
 
 
+class SymbolMatch(BaseModel):
+    """One result from a symbol search.
+
+    Exists because the old UI required users to already know that Reliance
+    is `RELIANCE.NS` and HSBC Hong Kong is `0005.HK`. It printed a 60-row
+    table of exchange suffixes and left the rest to them.
+    """
+
+    symbol: str
+    name: str | None = None
+    exchange: str | None = None
+    quote_type: str | None = None
+    currency: str | None = None
+
+    @property
+    def label(self) -> str:
+        parts = [self.symbol]
+        if self.name:
+            parts.append(f"— {self.name}")
+        if self.exchange:
+            parts.append(f"({self.exchange})")
+        return " ".join(parts)
+
+
 class PriceHistory(BaseModel):
     """An OHLCV series plus the metadata describing what it is."""
 

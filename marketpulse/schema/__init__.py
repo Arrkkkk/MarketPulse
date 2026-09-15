@@ -9,6 +9,7 @@ from marketpulse.schema.market import (
     CryptoQuote,
     PriceHistory,
     Quote,
+    SymbolMatch,
 )
 from marketpulse.schema.news import NewsArticle, NewsResult
 
@@ -19,4 +20,5 @@ __all__ = [
     "NewsResult",
     "PriceHistory",
     "Quote",
+    "SymbolMatch",
 ]

@@ -92,3 +92,32 @@ def test_news_results_round_trip_through_the_cache(cache):
 def test_cached_wrapper_reports_inner_configuration(cache):
     inner = FakeNewsProvider("NewsAPI", configured=False)
     assert CachedNewsProvider(inner, cache).configured is False
+
+
+def test_search_results_are_cached(cache):
+    inner = FakePriceProvider(histories={"AAPL": make_history("AAPL")})
+    provider = CachedPriceProvider(inner, cache)
+    provider.search_symbols("aap")
+    inner.calls.clear()
+    matches = provider.search_symbols("aap")
+    assert inner.calls == [], "a repeat search should not reach the upstream"
+    assert matches[0].symbol == "AAPL"
+
+
+def test_search_is_cached_case_insensitively(cache):
+    inner = FakePriceProvider(histories={"AAPL": make_history("AAPL")})
+    provider = CachedPriceProvider(inner, cache)
+    provider.search_symbols("AAPL")
+    inner.calls.clear()
+    provider.search_symbols("  aapl ")
+    assert inner.calls == []
+
+
+def test_an_empty_search_result_is_also_cached(cache):
+    """A nonsense query stays nonsense; re-asking costs a round trip."""
+    inner = FakePriceProvider(histories={"AAPL": make_history("AAPL")})
+    provider = CachedPriceProvider(inner, cache)
+    assert provider.search_symbols("zzz") == []
+    inner.calls.clear()
+    assert provider.search_symbols("zzz") == []
+    assert inner.calls == []

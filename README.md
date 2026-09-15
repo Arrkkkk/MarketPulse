@@ -54,6 +54,13 @@ successes are cached — caching a failure turns a 30-second outage into a
 jittered exponential backoff, a circuit breaker whose half-open state admits
 exactly one probe, and a per-provider token bucket sized to each free tier.
 
+**You can search by name.** The original required you to already know that
+Reliance is `RELIANCE.NS` and HSBC Hong Kong is `0005.HK`, and offered a
+60-row table of exchange suffixes as its answer — documentation standing in
+for a feature. Typing `hsbc` now returns HSBC (USD), 0005.HK (HKD) and
+HSBA.L (GBP). An exact ticker skips the lookup, so people who know what they
+want are not slowed down by people who do not.
+
 **AI output is a schema, not prose.** `NewsAnalysis` constrains the model to
 a sentiment enum, a bounded confidence, themes and risk flags, so sentiment
 becomes chartable data and the AI feature becomes testable — you assert on
@@ -95,7 +102,7 @@ Streamlit.
 ## Development
 
 ```bash
-uv run pytest                     # 299 tests, no network
+uv run pytest                     # 310 tests, no network
 uv run pytest --cov               # coverage
 uv run ruff check marketpulse/
 uv run python scripts/smoke_live.py    # hits real upstreams
@@ -142,7 +149,7 @@ Re-measure with `scripts/smoke_live.py` and `GET /metrics`.
 ## API
 
 `GET /health` · `/health/ready` · `/info` · `/metrics`
-`GET /v1/overview` · `/v1/history/{symbol}` · `/v1/profile/{symbol}` ·
+`GET /v1/overview` · `/v1/search?q=` · `/v1/history/{symbol}` · `/v1/profile/{symbol}` ·
 `/v1/crypto/history/{coin_id}` · `/v1/news/{symbol}` · `/v1/news?q=`
 `GET /v1/analysis/{symbol}` · `/v1/analysis/{symbol}/stream` (SSE) ·
 `POST /v1/insights` (SSE)

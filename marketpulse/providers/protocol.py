@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from marketpulse.schema import CompanyProfile, CryptoQuote, NewsResult, PriceHistory
+from marketpulse.schema.market import SymbolMatch
 
 
 @runtime_checkable
@@ -62,6 +63,15 @@ class PriceProvider(Protocol):
 
     def get_profile(self, symbol: str) -> CompanyProfile:
         """Descriptive metadata for one symbol."""
+        ...
+
+    def search_symbols(self, query: str, limit: int = 8) -> list[SymbolMatch]:
+        """Resolve a free-text company name to candidate tickers.
+
+        An empty list means the query matched nothing — which is a real
+        answer for a nonsense query and must not be confused with a search
+        service that failed.
+        """
         ...
 
 

@@ -10,14 +10,13 @@ from __future__ import annotations
 
 import os
 
-import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from marketpulse.client import DEFAULT_BASE_URL, MarketPulseClient, MarketPulseClientError
-from marketpulse.schema.api import is_valid_symbol
 from marketpulse.schema.exchanges import currency_for_symbol
-from marketpulse.ui.components import analysis, charts, panels, state
+from marketpulse.schema.market import Quote
+from marketpulse.ui.components import analysis, charts, panels, search, state
 
 SNAPSHOT_STEP = 4
 
@@ -68,12 +67,16 @@ def _overview_section(client: MarketPulseClient) -> None:
     if "snapshot_pages" not in st.session_state:
         st.session_state.snapshot_pages = 1
 
-    with st.spinner("Loading market data…"):
-        try:
-            overview = client.get_overview()
-        except MarketPulseClientError as exc:
-            state.show_error(exc, context="Overview")
-            return
+    placeholder = st.empty()
+    with placeholder.container():
+        state.skeleton_metrics(SNAPSHOT_STEP)
+    try:
+        overview = client.get_overview()
+    except MarketPulseClientError as exc:
+        placeholder.empty()
+        state.show_error(exc, context="Overview")
+        return
+    placeholder.empty()
 
     state.degraded_banner(overview.failures)
     limit = SNAPSHOT_STEP * st.session_state.snapshot_pages
@@ -104,49 +107,11 @@ def _overview_section(client: MarketPulseClient) -> None:
 def _stock_detail(client: MarketPulseClient) -> None:
     st.subheader("Stock detail")
 
-    raw = st.text_input(
-        "Ticker symbol",
-        value=st.session_state.get("symbol", "AAPL"),
-        help="AAPL · RELIANCE.NS (India) · 0005.HK (Hong Kong) · SHEL.L (UK)",
-    ).strip().upper()
-
-    with st.expander("Exchange suffixes"):
-        st.caption(
-            "Non-US listings need an exchange suffix. A few common ones — "
-            "yfinance documents the full list."
-        )
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    ("United States (NASDAQ/NYSE)", "(none)"),
-                    ("India (NSE / BSE)", ".NS / .BO"),
-                    ("United Kingdom (LSE)", ".L"),
-                    ("Hong Kong (HKEX)", ".HK"),
-                    ("Germany (XETRA)", ".DE"),
-                    ("Japan (TSE)", ".T"),
-                    ("Canada (TSX)", ".TO"),
-                    ("Australia (ASX)", ".AX"),
-                ],
-                columns=["Market", "Suffix"],
-            ),
-            hide_index=True,
-            width="stretch",
-        )
-
+    raw = search.symbol_input(client)
     if not raw:
-        state.show_empty("Enter a ticker symbol to see details.")
+        state.show_empty("Search for a company or enter a ticker to see details.")
         return
 
-    # Validated here as well as server-side, so an obviously bad symbol
-    # never costs a round trip.
-    if not is_valid_symbol(raw):
-        st.warning(
-            f"`{raw}` is not a valid ticker. Use letters, digits, `.`, `-` or `^` "
-            f"(for example `AAPL` or `RELIANCE.NS`)."
-        )
-        return
-
-    st.session_state.symbol = raw
     period = charts.range_selector("stock_range", charts.RANGE_OPTIONS, default="1Y")
 
     try:
@@ -159,8 +124,11 @@ def _stock_detail(client: MarketPulseClient) -> None:
             if exc.code != "symbol_not_found":
                 st.caption(f"Company details unavailable: {exc}")
 
-        with st.spinner(f"Loading {raw}…"):
-            history = client.get_history(raw, period=period)
+        chart_slot = st.empty()
+        with chart_slot.container():
+            state.skeleton_chart()
+        history = client.get_history(raw, period=period)
+        chart_slot.empty()
     except MarketPulseClientError as exc:
         state.show_error(exc, context=raw)
         return
@@ -171,8 +139,6 @@ def _stock_detail(client: MarketPulseClient) -> None:
     frame_bars = history.bars
     if frame_bars:
         last, prev = frame_bars[-1], (frame_bars[-2] if len(frame_bars) > 1 else None)
-        from marketpulse.schema.market import Quote
-
         panels.key_metrics(
             Quote(
                 symbol=raw,
@@ -222,8 +188,11 @@ def _crypto_detail(client: MarketPulseClient) -> None:
     days = charts.range_selector("crypto_range", charts.CRYPTO_RANGE_OPTIONS, default="1M")
 
     try:
-        with st.spinner(f"Loading {coin}…"):
-            history = client.get_crypto_history(coin, days=days)
+        chart_slot = st.empty()
+        with chart_slot.container():
+            state.skeleton_chart(16)
+        history = client.get_crypto_history(coin, days=days)
+        chart_slot.empty()
     except MarketPulseClientError as exc:
         state.show_error(exc, context=coin)
         return

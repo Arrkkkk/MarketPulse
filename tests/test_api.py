@@ -450,3 +450,49 @@ def test_history_defaults_to_a_chart_sized_payload(client):
     assert DEFAULT_BARS < MAX_BARS
     body = client.get("/v1/history/AAPL").json()
     assert body["count"] <= DEFAULT_BARS
+
+
+# --- symbol search ---------------------------------------------------------
+
+
+def test_search_returns_matches():
+    price = FakePriceProvider(histories={s: make_history(s) for s in ("AAPL", "AMZN")})
+    body = build_client(price=price).get("/v1/search?q=A").json()
+    assert body["query"] == "A"
+    assert {m["symbol"] for m in body["matches"]} == {"AAPL", "AMZN"}
+
+
+def test_search_returns_200_and_an_empty_list_when_nothing_matches(client):
+    """A well-formed query matching nothing is an answer, not a failure."""
+    r = client.get("/v1/search?q=zzzznotacompany")
+    assert r.status_code == 200
+    assert r.json()["matches"] == []
+
+
+def test_search_requires_a_query(client):
+    assert client.get("/v1/search").status_code == 422
+
+
+def test_search_rejects_an_overlong_query(client):
+    assert client.get(f"/v1/search?q={'x' * 200}").status_code == 422
+
+
+def test_search_respects_the_limit():
+    price = FakePriceProvider(
+        histories={f"AA{i}": make_history(f"AA{i}") for i in range(20)}
+    )
+    body = build_client(price=price).get("/v1/search?q=AA&limit=3").json()
+    assert len(body["matches"]) == 3
+
+
+def test_search_route_is_not_shadowed_by_the_profile_route(client):
+    """/v1/search must not be parsed as /v1/profile/{symbol}-style routing.
+    Declaring the literal path first is what prevents that."""
+    assert client.get("/v1/search?q=AAPL").status_code == 200
+
+
+def test_search_failure_propagates_as_an_error_not_an_empty_list():
+    price = FakePriceProvider(fail_with=ProviderUnavailable("down", provider="yf"))
+    r = build_client(price=price).get("/v1/search?q=apple")
+    assert r.status_code == 502
+    assert "matches" not in r.json()

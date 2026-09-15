@@ -15,7 +15,13 @@ from typing import Annotated, Any
 import pandas as pd
 from pydantic import BaseModel, Field, StringConstraints
 
-from marketpulse.schema.market import CompanyProfile, CryptoQuote, PriceHistory, Quote
+from marketpulse.schema.market import (
+    CompanyProfile,
+    CryptoQuote,
+    PriceHistory,
+    Quote,
+    SymbolMatch,
+)
 from marketpulse.schema.news import NewsArticle
 
 #: Exchange-qualified tickers: AAPL, RELIANCE.NS, 0005.HK, BRK-B, and index
@@ -130,6 +136,17 @@ class OverviewResponse(BaseModel):
 
 class ProfileResponse(CompanyProfile):
     pass
+
+
+class SearchResponse(BaseModel):
+    """Symbol search results.
+
+    An empty `matches` for a well-formed query is a real answer, not a
+    failure — the same rule the providers follow.
+    """
+
+    query: str
+    matches: list[SymbolMatch]
 
 
 # --- news -----------------------------------------------------------------

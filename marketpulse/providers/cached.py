@@ -30,6 +30,7 @@ from marketpulse.platform.cache import (
 from marketpulse.platform.telemetry import get_logger
 from marketpulse.providers.protocol import CryptoProvider, NewsProvider, PriceProvider
 from marketpulse.schema import CompanyProfile, CryptoQuote, NewsResult, PriceHistory
+from marketpulse.schema.market import SymbolMatch
 
 logger = get_logger("providers.cached")
 
@@ -103,6 +104,18 @@ class CachedPriceProvider:
         profile = self._inner.get_profile(symbol)
         self._cache.set(key, profile.model_dump(mode="json"), TTL_PROFILE)
         return profile
+
+    def search_symbols(self, query: str, limit: int = 8) -> list[SymbolMatch]:
+        key = make_key(f"{self.name}:search", q=query.lower().strip(), limit=limit)
+        payload = self._cache.get(key)
+        if payload is not None:
+            return [SymbolMatch.model_validate(m) for m in payload]
+        matches = self._inner.search_symbols(query, limit)
+        # Cached for a day: the mapping from a company name to its ticker is
+        # about as stable as data gets. An empty result is cached too — a
+        # nonsense query stays nonsense, and re-asking costs a round trip.
+        self._cache.set(key, [m.model_dump(mode="json") for m in matches], TTL_PROFILE)
+        return matches
 
 
 class CachedCryptoProvider:

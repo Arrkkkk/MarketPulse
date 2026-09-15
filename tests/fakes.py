@@ -12,7 +12,13 @@ from typing import Any
 import pandas as pd
 
 from marketpulse.providers.errors import ProviderUnavailable, SymbolNotFound
-from marketpulse.schema.market import CompanyProfile, CryptoQuote, PriceHistory, utcnow
+from marketpulse.schema.market import (
+    CompanyProfile,
+    CryptoQuote,
+    PriceHistory,
+    SymbolMatch,
+    utcnow,
+)
 from marketpulse.schema.news import NewsArticle, NewsResult
 
 
@@ -91,6 +97,15 @@ class FakePriceProvider:
         if symbol not in self.profiles:
             raise SymbolNotFound(f"no profile for {symbol}", provider=self.name)
         return self.profiles[symbol]
+
+    def search_symbols(self, query: str, limit: int = 8) -> list[SymbolMatch]:
+        self.calls.append(("search_symbols", (query, limit)))
+        self._maybe_fail()
+        return [
+            SymbolMatch(symbol=s, name=f"{s} Inc.", exchange="NMS")
+            for s in self.histories
+            if query.lower() in s.lower()
+        ][:limit]
 
 
 class FakeCryptoProvider:
