@@ -26,20 +26,30 @@ UI_PORT="${PORT:-8501}"  # Render sets $PORT (10000 by default); falls back
 
 export MARKETPULSE_API_URL="http://127.0.0.1:${API_PORT}"
 
+echo "start_combined: launching API on 127.0.0.1:${API_PORT}"
 uvicorn marketpulse.api.main:app --host 127.0.0.1 --port "${API_PORT}" &
 API_PID=$!
-
-# If the API process dies, bring the whole container down rather than
-# serve a UI that can never reach it — Render then restarts the container,
-# which is the correct response to that failure, not a UI stuck showing
-# "cannot reach the MarketPulse API" forever.
-trap 'kill "$API_PID" 2>/dev/null' EXIT
 
 # Wait for the API to actually accept connections before starting
 # Streamlit, so the first page load doesn't race a uvicorn process that
 # hasn't bound its socket yet. No curl/nc dependency — python3 is already
 # in the image.
-for _ in $(seq 1 30); do
+#
+# Fails loud rather than starting the UI anyway on a timeout: the same
+# rule ADR 1 established for the providers applies here too — a UI that
+# comes up "successfully" in front of an API that never started would be
+# the identical dishonesty, just one layer higher. Exiting non-zero here
+# makes the platform show a failed deploy, which is what actually
+# happened, instead of a UI that loads fine and then lies on every page.
+#
+# 90s, not 15: Render's free instance is 0.1 CPU / 512MB. This process
+# cold-imports pandas, yfinance and plotly before uvicorn's socket can
+# even become connectable — comfortably under a second on a real machine,
+# an unverified guess on hardware that thin. Generous here costs nothing
+# on a healthy start (the loop still breaks the moment the socket answers)
+# and only matters on a genuinely slow one.
+ready=0
+for i in $(seq 1 180); do
   if python3 -c "
 import socket, sys
 s = socket.socket()
@@ -51,13 +61,40 @@ except OSError:
 finally:
     s.close()
 " 2>/dev/null; then
+    ready=1
+    echo "start_combined: API accepting connections after ${i} check(s)"
     break
   fi
   sleep 0.5
 done
 
-exec streamlit run app.py \
+if [[ "$ready" -ne 1 ]]; then
+  echo "start_combined: API never accepted a connection on 127.0.0.1:${API_PORT} after 90s — failing rather than starting a UI with nothing behind it" >&2
+  kill "$API_PID" 2>/dev/null || true
+  exit 1
+fi
+
+echo "start_combined: launching UI on 0.0.0.0:${UI_PORT}"
+streamlit run app.py \
   --server.port="${UI_PORT}" \
   --server.address=0.0.0.0 \
   --server.headless=true \
-  --browser.gatherUsageStats=false
+  --browser.gatherUsageStats=false &
+UI_PID=$!
+
+# Supervise both: if either process exits — a crash, not just "this
+# script exiting" — bring the whole container down so the platform
+# restarts it, rather than leaving the survivor running against a dead
+# partner. Not `trap ... EXIT` on an `exec`'d process: exec replaces this
+# shell's own process image without ever running its EXIT traps, which
+# would make that trap dead code the moment the UI actually started —
+# both processes are backgrounded instead, specifically so this loop can
+# keep watching both.
+while kill -0 "$API_PID" 2>/dev/null && kill -0 "$UI_PID" 2>/dev/null; do
+  sleep 2
+done
+
+echo "start_combined: one process exited — stopping the other and exiting" >&2
+kill "$API_PID" "$UI_PID" 2>/dev/null || true
+wait 2>/dev/null || true
+exit 1
