@@ -225,5 +225,5 @@ websockets==16.1.1
     #   streamlit
     #   uvicorn
     #   yfinance
-yfinance==0.2.66
+yfinance==1.7.0
     # via marketpulse
